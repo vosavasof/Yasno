@@ -1,10 +1,24 @@
 // Official YooKassa iframe widget. A browser event never grants credits: the
 // caller verifies the order on the server before displaying a successful result.
+import{CHECKOUT_SCRIPTS}from'./security-policy.js';
 let loading;
+function loadScript(src){
+ return new Promise((resolve,reject)=>{
+  const script=document.createElement('script');script.src=src;script.async=true;script.referrerPolicy='no-referrer';
+  const fail=()=>{clearTimeout(timeout);script.onload=script.onerror=null;script.remove();reject(Error('Не удалось загрузить форму ЮKassa. Проверьте соединение.'))};
+  const timeout=setTimeout(fail,10000);
+  script.onload=()=>{clearTimeout(timeout);script.onload=script.onerror=null;if(window.YooMoneyCheckoutWidget)resolve(window.YooMoneyCheckoutWidget);else{script.remove();reject(Error('Не удалось открыть форму ЮKassa'))}};
+  script.onerror=fail;document.head.append(script);
+ });
+}
 export function loadCheckoutWidget(){
  if(window.YooMoneyCheckoutWidget)return Promise.resolve(window.YooMoneyCheckoutWidget);
  if(loading)return loading;
- loading=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://yookassa.ru/checkout-widget/v1/checkout-widget.js';script.async=true;script.referrerPolicy='no-referrer';const timeout=setTimeout(()=>{script.remove();loading=null;reject(Error('Форма ЮKassa загружается слишком долго. Проверьте соединение и откройте оплату снова.'))},20000);script.onload=()=>{clearTimeout(timeout);if(window.YooMoneyCheckoutWidget)resolve(window.YooMoneyCheckoutWidget);else{loading=null;reject(Error('Не удалось открыть форму ЮKassa'))}};script.onerror=()=>{clearTimeout(timeout);script.remove();loading=null;reject(Error('Не удалось загрузить форму ЮKassa. Проверьте соединение.'))};document.head.append(script)});
+ loading=(async()=>{
+  for(const [index,src]of CHECKOUT_SCRIPTS.entries()){
+   try{return await loadScript(src)}catch(error){if(index===CHECKOUT_SCRIPTS.length-1)throw error}
+  }
+ })().catch(error=>{loading=null;throw error});
  return loading;
 }
 export async function mountCheckout({token,container,onComplete,onError}){

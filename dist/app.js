@@ -1,4 +1,4 @@
-import{mountCheckout}from'./payment-widget.js?v=return1';
+import{mountCheckout}from'./payment-widget.js?v=widgetfix1';
 import{parentsFor}from'./management.js';
 import{parseCSV,importFields,suggestMapping,mappedRows,planImport}from'./import-data.js';
 import{enhanceTables,closeNavigation,toggleNavigation,setNavigation}from'./mobile-ui.js?v=mobile1';

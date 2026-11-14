@@ -1,3 +1,4 @@
+import{securityPolicy}from'./dist/security-policy.js';
 import{familyCanEnter}from'./dist/management.js';
 import{handlePayments}from'./backend/yookassa.js';
 import http from "node:http";
@@ -607,6 +608,7 @@ const server = http.createServer(async (req, res) => {
       "/index.html": "index.html",
       "/app.js": "app.js",
       "/payment-widget.js":"payment-widget.js",
+      "/security-policy.js":"security-policy.js",
       "/xlsx-reader.js":"xlsx-reader.js",
       "/xlsx-reader-LICENSE.txt":"xlsx-reader-LICENSE.txt",
       "/management.js":"management.js",
@@ -642,8 +644,7 @@ const server = http.createServer(async (req, res) => {
       "Cache-Control": "no-cache",
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer",
-      "Content-Security-Policy":
-        "default-src 'self'; connect-src 'self' https://yoomoney.ru https://yookassa.ru https://kassa.yandex.ru; script-src 'self' https://yookassa.ru/checkout-widget/v1/checkout-widget.js https://yoomoney.ru/checkout-ui/v2.js https://kassa.yandex.ru/checkout-ui/v2.js; style-src 'self' 'unsafe-inline'; font-src 'self'; frame-src 'self' https://yoomoney.ru https://*.yoomoney.ru https://yookassa.ru https://kassa.yandex.ru; img-src 'self' data: blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+      "Content-Security-Policy": securityPolicy({preventEmbedding:true}),
     });
     res.end(
       req.method === "HEAD"

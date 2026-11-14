@@ -1,3 +1,4 @@
+import{enhanceTables,closeNavigation,toggleNavigation,setNavigation}from'./mobile-ui.js?v=mobile1';
 import {apiFetch,clearAccess} from './api-client.js?v=pages1';
 import {
   emptyState,
@@ -224,7 +225,9 @@ async function act(a, message = "Сохранено") {
     return false;
   }
 }
-const brand = `<div class="brand"><img class="brand-lockup" src="./yasna-logo.png" alt="Ясна — жёлтый рукописный логотип с красным кругом" width="168" height="106"><div class="brand-sub">ДЕТСКАЯ МАСТЕРСКАЯ</div></div>`;
+const logoPicture=(compact=false)=>`<picture${compact?' class="mobile-wordmark"':''}><source srcset="./yasna-logo-light.webp" type="image/webp"><img${compact?'':' class="brand-lockup"'} src="./yasna-logo-light.png" alt="Ясна — жёлтый рукописный логотип с красным кругом на белом фоне" width="${compact?72:168}" height="${compact?44:106}"></picture>`;
+const brand=`<div class="brand">${logoPicture()}<div class="brand-sub">ДЕТСКАЯ МАСТЕРСКАЯ</div></div>`;
+
 const nav = [
   ["dashboard", "grid", "Обзор"],
   ["applications", "file", "Заявки"],
@@ -235,6 +238,7 @@ const nav = [
   ["reports", "chart", "Отчёты"],
 ];
 function render() {
+  closeNavigation(false);
   if (startupError) return renderStartupError();
   if (parentEntryError) return renderParentLinkError();
   if (enrollmentMode) return renderEnrollment();
@@ -252,7 +256,7 @@ function render() {
       ? "Кабинет родителя"
       : nav.find((n) => n[0] === page)?.[2] || "Настройки";
   document.querySelector("#app").innerHTML =
-    `<aside class="sidebar">${brand}<div class="studio-tag">ПРОСТРАНСТВО МАСТЕРА</div><nav class="nav">${(role ===
+    `<button class="nav-backdrop" data-action="closemenu" aria-label="Закрыть меню" hidden></button><aside class="sidebar" id="main-navigation" aria-label="Навигация"><button class="icon-btn nav-close" data-action="closemenu" aria-label="Закрыть меню">${I("close")}</button>${brand}<div class="studio-tag">ПРОСТРАНСТВО МАСТЕРА</div><nav class="nav">${(role ===
     "parent"
       ? [
           ["dashboard", "grid", "Моя семья"],
@@ -267,8 +271,10 @@ function render() {
       )
       .join(
         "",
-      )}</nav><div class="sidebar-bottom">${role === "master" ? `<nav class="nav"><button data-page="settings" class="${page === "settings" ? "active" : ""}">${I("settings")}<span>Настройки</span></button></nav>` : ""}<div class="help-box"><b>У всего есть своя история</b>У маленьких открытий — тоже.<br>Пусть для них будет больше времени.<a class="vk-link" href="https://vk.ru/yasna.vibe" target="_blank" rel="noopener noreferrer">Мы ВКонтакте ${I("arrow")}</a></div><div class="profile"><span class="avatar green">${role === "master" ? "М" : initials(viewData.children[0]?.parent || "Родитель")}</span><div><b>${role === "master" ? "Кабинет мастера" : escape(viewData.children[0]?.parent || "Родитель")}</b><small>${role === "master" ? "Мастерская в Сургуте" : "Кабинет семьи"}</small></div><button class="text-link" data-action="${backend ? "logout" : "about"}" aria-label="${backend ? "Выйти" : "О демонстрации"}">${I(backend ? "logout" : "down")}</button></div></div></aside><main class="main"><header class="topbar"><button class="icon-btn mobile-menu" data-action="menu" aria-label="Открыть меню">${I("menu")}</button><div class="breadcrumb">Мастерская «Ясна» <span>/</span><strong>${title}</strong></div><div class="top-tools"><button class="btn small intake-top-btn" data-action="intake" aria-label="Первичная запись без личного кабинета">${I("plus")}<span>Первичная запись</span></button>${!backend ? `<span class="demo-label">${localPersistent ? "Демо-данные" : "Без сохранения"}</span><div class="role-switch"><button class="${role === "master" ? "on" : ""}" data-role="master">Кабинет мастера</button><button class="${role === "parent" ? "on" : ""}" data-role="parent">Я родитель</button></div>` : `<span class="demo-label">${role === "master" ? "Мастер" : "Родитель"}</span>`}<button class="icon-btn notifications-button ${alerts.some((n) => !n.read) ? "has-unread" : ""}" data-action="notifications" aria-label="Уведомления: ${alerts.filter((n) => !n.read).length} непрочитанных">${I("bell")}${alerts.some((n) => !n.read) ? `<span class="notification-count">${alerts.filter((n) => !n.read).length}</span>` : ""}</button></div></header><div class="content">${role === "parent" && page === "dashboard" ? parentPage() : page === "dashboard" ? dashboard() : page === "schedule" ? schedule() : page === "applications" ? applicationsPage() : page === "clients" ? clients() : page === "subscriptions" ? subscriptions() : page === "payments" ? payments() : page === "reports" ? reports() : settings()}<footer class="footer"><span>© 2026 Ясна · сделано с заботой о маленьких мастерах · <a href="https://vk.ru/yasna.vibe" target="_blank" rel="noopener noreferrer">ВКонтакте ↗</a></span><span>${backend ? "Данные сохраняются на сервере" : localPersistent ? "Демонстрация · данные хранятся в этом браузере" : "Данные в памяти вкладки · скачайте резервную копию"} <span style="margin-left:12px">Сургут · UTC+5</span></span></footer></div></main>`;
+      )}</nav><div class="sidebar-bottom">${role === "master" ? `<nav class="nav"><button data-page="settings" class="${page === "settings" ? "active" : ""}">${I("settings")}<span>Настройки</span></button></nav>` : ""}<div class="help-box"><b>У всего есть своя история</b>У маленьких открытий — тоже.<br>Пусть для них будет больше времени.<a class="vk-link" href="https://vk.ru/yasna.vibe" target="_blank" rel="noopener noreferrer">Мы ВКонтакте ${I("arrow")}</a></div><div class="profile"><span class="avatar green">${role === "master" ? "М" : initials(viewData.children[0]?.parent || "Родитель")}</span><div><b>${role === "master" ? "Кабинет мастера" : escape(viewData.children[0]?.parent || "Родитель")}</b><small>${role === "master" ? "Мастерская в Сургуте" : "Кабинет семьи"}</small></div><button class="text-link" data-action="${backend ? "logout" : "about"}" aria-label="${backend ? "Выйти" : "О демонстрации"}">${I(backend ? "logout" : "down")}</button></div></div></aside><main class="main"><header class="topbar"><button class="icon-btn mobile-menu" data-action="menu" aria-label="Открыть меню" aria-controls="main-navigation" aria-expanded="false">${I("menu")}</button>${logoPicture(true)}<div class="breadcrumb">Мастерская «Ясна» <span>/</span><strong>${title}</strong></div><div class="top-tools"><button class="btn small intake-top-btn" data-action="intake" aria-label="Первичная запись без личного кабинета">${I("plus")}<span>Первичная запись</span></button>${!backend ? `<span class="demo-label">${localPersistent ? "Демо-данные" : "Без сохранения"}</span><div class="role-switch"><button class="${role === "master" ? "on" : ""}" data-role="master">Кабинет мастера</button><button class="${role === "parent" ? "on" : ""}" data-role="parent">Я родитель</button></div>` : `<span class="demo-label">${role === "master" ? "Мастер" : "Родитель"}</span>`}<button class="icon-btn notifications-button ${alerts.some((n) => !n.read) ? "has-unread" : ""}" data-action="notifications" aria-label="Уведомления: ${alerts.filter((n) => !n.read).length} непрочитанных">${I("bell")}${alerts.some((n) => !n.read) ? `<span class="notification-count">${alerts.filter((n) => !n.read).length}</span>` : ""}</button></div></header><div class="content">${role === "parent" && page === "dashboard" ? parentPage() : page === "dashboard" ? dashboard() : page === "schedule" ? schedule() : page === "applications" ? applicationsPage() : page === "clients" ? clients() : page === "subscriptions" ? subscriptions() : page === "payments" ? payments() : page === "reports" ? reports() : settings()}<footer class="footer"><span>© 2026 Ясна · сделано с заботой о маленьких мастерах · <a href="https://vk.ru/yasna.vibe" target="_blank" rel="noopener noreferrer">ВКонтакте ↗</a></span><span>${backend ? "Данные сохраняются на сервере" : localPersistent ? "Демонстрация · данные хранятся в этом браузере" : "Данные в памяти вкладки · скачайте резервную копию"} <span style="margin-left:12px">Сургут · UTC+5</span></span></footer></div></main>${mobileNavigation()}`;
+  enhanceTables(document.querySelector(".content"));
   bind();
+  setNavigation(false,false);
 }
 function head(eyebrow, title, sub, button = "") {
   return `<div class="page-head"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p class="subtitle">${sub}</p></div>${button}</div>`;
@@ -658,8 +664,11 @@ function bind() {
     });
 }
 function showModal(title, body, large = false) {
+  closeNavigation(false);
+  document.body.classList.add("modal-open");
   document.querySelector("#modal-root").innerHTML =
     `<div class="modal-backdrop"><section class="modal ${large ? "large" : ""}" role="dialog" aria-modal="true" aria-label="${escape(title)}"><div class="modal-head"><h2>${title}</h2><button class="icon-btn" id="close-modal" aria-label="Закрыть">${I("close")}</button></div>${body}</section></div>`;
+  enhanceTables(document.querySelector(".modal"));
   document.querySelector("#close-modal").onclick = closeModal;
   document.querySelector(".modal-backdrop").onclick = (e) => {
     if (e.target.classList.contains("modal-backdrop")) closeModal();
@@ -667,6 +676,7 @@ function showModal(title, body, large = false) {
   document.querySelector(".modal input,.modal select,.modal button")?.focus();
 }
 function closeModal() {
+  document.body.classList.remove("modal-open");
   document.querySelector("#modal-root").innerHTML = "";
   modalLesson = null;
 }
@@ -951,7 +961,8 @@ function uploadReceipt(id) {
 }
 const actions = {
   intake: () => navigateEnrollment(true),
-  menu: () => document.querySelector(".sidebar").classList.toggle("open"),
+  menu: () => toggleNavigation(),
+  closemenu: () => closeNavigation(true),
   today: () => {},
   openjournal: () => {
     const l = viewData.lessons.find((l) => l.date === TODAY);
@@ -1493,3 +1504,5 @@ notificationPoll.unref?.();
 
 async function downloadRemoteReceipt(id,name){try{const r=await apiFetch('/api/receipts/'+encodeURIComponent(id));if(!r.ok){const e=await readJson(r);throw Error(e.error||'Не удалось скачать чек')}const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}catch(e){toast(e.message)}}
 function renderMasterSetup(code){document.querySelector('#app').innerHTML=`<div class="login-page"><form class="login-card" id="master-setup">${brand}<h2>Первый вход мастера</h2><p class="subtitle">Выберите логин и пароль. Эта персональная ссылка используется только один раз.</p><label class="form-field" style="margin-top:20px">Логин<input name="username" value="master" pattern="[a-zA-Z0-9_.-]{3,60}" autocomplete="username" required></label><label class="form-field">Пароль — от 12 символов<input name="password" type="password" minlength="12" maxlength="256" autocomplete="new-password" required></label><label class="form-field">Повторите пароль<input name="confirmation" type="password" minlength="12" maxlength="256" autocomplete="new-password" required></label><p class="error" id="setup-error" role="alert"></p><button class="btn primary" type="submit">Сохранить и открыть кабинет</button></form></div>`;document.querySelector('#master-setup').onsubmit=async e=>{e.preventDefault();const values=Object.fromEntries(new FormData(e.target)),button=e.target.querySelector('[type=submit]');if(values.password!==values.confirmation){document.querySelector('#setup-error').textContent='Пароли не совпадают';return}button.disabled=true;try{const r=await apiFetch('/api/auth/setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,username:values.username,password:values.password})}),result=await readJson(r);if(!r.ok)throw Error(result.error);user=result;role=result.role;page='dashboard';await loadServer();render()}catch(err){document.querySelector('#setup-error').textContent=err.message;button.disabled=false}}}
+
+function mobileNavigation(){const tabs=role==='parent'?[['dashboard','grid','Моя семья'],['schedule','calendar','Записаться'],['payments','wallet','Оплаты']]:[['dashboard','grid','Обзор'],['schedule','calendar','Занятия'],['clients','users','Дети'],['payments','wallet','Оплаты']];const other=!tabs.some(t=>t[0]===page),pending=(viewData.applications||[]).filter(r=>r.status==='pending').length;return`<nav class="mobile-bottom-nav" aria-label="Основные разделы">${tabs.map(([id,icon,label])=>`<button data-page="${id}" class="${page===id?'is-active':''}"${page===id?' aria-current="page"':''}>${I(icon)}<span>${label}</span></button>`).join('')}${role==='master'?`<button data-action="menu" class="${other?'is-active':''}" aria-label="Ещё разделы" aria-controls="main-navigation" aria-expanded="false">${I('menu')}<span>Ещё</span>${pending?`<span class="mobile-nav-count">${pending}</span>`:''}</button>`:''}</nav>`}

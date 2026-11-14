@@ -596,6 +596,10 @@ const server = http.createServer(async (req, res) => {
       "/": "index.html",
       "/index.html": "index.html",
       "/app.js": "app.js",
+      "/mobile-ui.js":"mobile-ui.js",
+      "/mobile.css":"mobile.css",
+      "/yasna-logo-light.webp":"yasna-logo-light.webp",
+      "/yasna-logo-light.png":"yasna-logo-light.png",
       "/api-client.js":"api-client.js",
       "/config.js":"config.js",
       "/domain.js": "domain.js",
@@ -613,6 +617,7 @@ const server = http.createServer(async (req, res) => {
       ".js": "text/javascript; charset=utf-8",
       ".css": "text/css; charset=utf-8",
       ".png": "image/png",
+      ".webp":"image/webp",
       ".svg": "image/svg+xml",
     };
     res.writeHead(200, {
@@ -621,7 +626,7 @@ const server = http.createServer(async (req, res) => {
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer",
       "Content-Security-Policy":
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
     });
     res.end(
       req.method === "HEAD"

@@ -24,7 +24,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: node scripts/build-pages.mjs
+      - name: Build Pages with configured API
+        env:
+          YASNA_API_BASE: ${{ vars.YASNA_API_BASE }}
+          PAGES_BASE_PATH: ${{ vars.PAGES_BASE_PATH }}
+        run: node scripts/build-pages.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

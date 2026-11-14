@@ -1,3 +1,4 @@
+import {apiFetch,clearAccess} from './api-client.js?v=pages1';
 import {
   emptyState,
   applyAction,
@@ -5,8 +6,8 @@ import {
   validateState,
   submitApplication,
   TODAY as DEMO_TODAY,
-} from "./domain.js?v=8";
-import { detectSession, readJson } from "./transport.js?v=8";
+} from "./domain.js?v=pages1";
+import { detectSession, readJson } from "./transport.js?v=pages1";
 const paths = {
   grid: "M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z",
   calendar:
@@ -91,16 +92,19 @@ function tokenFromLink() {
   return hash.startsWith("#parent=") ? hash.slice(8) : null;
 }
 function forgetLinkToken() {
-  if (window.history?.replaceState) window.history.replaceState(null, "", "/");
+  if (window.history?.replaceState) window.history.replaceState(null, "", globalThis.YASNA_APP_PATH||"/");
   else if (window.location) window.location.hash = "";
 }
 async function init() {
+  const setupHash=window.location?.hash||'';
+  if(setupHash.startsWith('#setup=')){const code=setupHash.slice(7);forgetLinkToken();renderMasterSetup(code);return}
+
   startupError = null;
   try {
     let session;
     const token = tokenFromLink();
     if (token !== null) {
-      const r = await fetch("/api/parent-entry", {
+      const r = await apiFetch("/api/parent-entry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
@@ -113,7 +117,7 @@ async function init() {
         return;
       }
       forgetLinkToken();
-    } else session = await detectSession();
+    } else session = await detectSession(apiFetch);
     if (!session)
       throw Error(
         "Не удалось подключиться к рабочему серверу. Повторите позже.",
@@ -146,7 +150,7 @@ function expireSession() {
 }
 
 async function loadServer() {
-  const r = await fetch("/api/state");
+  const r = await apiFetch("/api/state");
   if (r.status === 401) {
     expireSession();
     return;
@@ -187,7 +191,7 @@ function toast(t) {
 async function act(a, message = "Сохранено") {
   try {
     if (backend) {
-      const r = await fetch("/api/action", {
+      const r = await apiFetch("/api/action", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: a, revision: data.revision }),
@@ -220,7 +224,7 @@ async function act(a, message = "Сохранено") {
     return false;
   }
 }
-const brand = `<div class="brand"><img class="brand-lockup" src="/yasna-logo.png" alt="Ясна — жёлтый рукописный логотип с красным кругом" width="168" height="106"><div class="brand-sub">ДЕТСКАЯ МАСТЕРСКАЯ</div></div>`;
+const brand = `<div class="brand"><img class="brand-lockup" src="./yasna-logo.png" alt="Ясна — жёлтый рукописный логотип с красным кругом" width="168" height="106"><div class="brand-sub">ДЕТСКАЯ МАСТЕРСКАЯ</div></div>`;
 const nav = [
   ["dashboard", "grid", "Обзор"],
   ["applications", "file", "Заявки"],
@@ -630,10 +634,7 @@ function bind() {
         if (r) {
           if (r.data) downloadDataURL(r.data, r.name);
           else {
-            const a = document.createElement("a");
-            a.href = "/api/receipts/" + encodeURIComponent(b.dataset.receipt);
-            a.download = r.name;
-            a.click();
+            downloadRemoteReceipt(b.dataset.receipt,r.name);
           }
         }
       }),
@@ -988,7 +989,7 @@ const actions = {
     ),
   backup: async () => {
     try {
-      const r = await fetch("/api/backup"),
+      const r = await apiFetch("/api/backup"),
         backup = await readJson(r);
       if (!r.ok) throw Error(backup.error);
       download(
@@ -1019,7 +1020,7 @@ const actions = {
         document.querySelector("#backup-confirm").onclick = async () => {
           try {
             if (backend) {
-              const r = await fetch("/api/restore", {
+              const r = await apiFetch("/api/restore", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ state: value, revision: data.revision }),
@@ -1049,7 +1050,7 @@ const actions = {
       `<p class="subtitle">Расписание → запись → посещение → списание → оплата → чек.</p><div class="inline-notice">${backend ? "Серверный режим: отдельные сессии мастера и родителя, SQLite, проверка прав доступа и резервные копии." : "Демонстрация на вымышленных данных. Изменения сохраняются в браузере. Переключатель ролей показывает обе стороны приложения и не является защитой доступа."}</div><p class="subtitle">Для самостоятельного размещения предусмотрен Node.js 24 + SQLite без платной CRM. Онлайн-эквайринг, автоматическая выдача фискальных чеков и сообщения в мессенджере требуют подключения выбранных сервисов.</p><p class="mini-note">Лист ожидания доступен при заполненной группе. Автоматическое предложение освободившегося места, импорт «МойКласс» и отработки — следующий этап.</p>${!backend ? `<a class="btn green" href="/yasna-source.zip" download>${I("download")}Скачать исходники и инструкцию</a>` : ""}`,
     ),
   logout: async () => {
-    await fetch("/api/logout", { method: "POST" });
+    await apiFetch("/api/logout", { method: "POST" });
     user = { role: null };
     render();
   },
@@ -1064,7 +1065,7 @@ function login() {
     const button = e.target.querySelector("[type=submit]");
     button.disabled = true;
     try {
-      const r = await fetch("/api/login", {
+      const r = await apiFetch("/api/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(Object.fromEntries(new FormData(e.target))),
@@ -1088,7 +1089,7 @@ init();
 
 async function parentAccount(family) {
   try {
-    const r = await fetch(
+    const r = await apiFetch(
         "/api/parent-links?family=" + encodeURIComponent(family),
         { cache: "no-store" },
       ),
@@ -1121,7 +1122,7 @@ function showParentLinks(family, links) {
     button.disabled = true;
     try {
       const input = Object.fromEntries(new FormData(e.target)),
-        r = await fetch("/api/parent-links", {
+        r = await apiFetch("/api/parent-links", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ...input, family }),
@@ -1177,7 +1178,7 @@ function confirmParentLinkAction(family, id, action) {
     const button = document.querySelector("#confirm-link-change");
     button.disabled = true;
     try {
-      const r = await fetch(
+      const r = await apiFetch(
           "/api/parent-links/" + encodeURIComponent(id) + "/" + action,
           {
             method: "POST",
@@ -1224,7 +1225,7 @@ const contactLabels = {
 };
 async function loadPublicLessons() {
   if (backend) {
-    const r = await fetch("/api/public/lessons", {
+    const r = await apiFetch("/api/public/lessons", {
       headers: { Accept: "application/json" },
       cache: "no-store",
     });
@@ -1295,7 +1296,7 @@ function renderEnrollment() {
       input.consent = e.target.querySelector("[name=consent]").checked;
       let result;
       if (backend) {
-        const r = await fetch("/api/public/applications", {
+        const r = await apiFetch("/api/public/applications", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(input),
@@ -1397,14 +1398,14 @@ function confirmApplication(id) {
 }
 
 async function loadNotifications() {
-  const r = await fetch("/api/notifications", { cache: "no-store" }),
+  const r = await apiFetch("/api/notifications", { cache: "no-store" }),
     result = await readJson(r);
   if (r.status === 401) expireSession();
   if (!r.ok) throw Error(result.error || "Не удалось загрузить уведомления");
   alerts = result.items || [];
 }
 async function readNotifications(ids) {
-  const r = await fetch("/api/notifications/read", {
+  const r = await apiFetch("/api/notifications/read", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids }),
@@ -1489,3 +1490,6 @@ const notificationPoll = setInterval(async () => {
   } catch {}
 }, 30000);
 notificationPoll.unref?.();
+
+async function downloadRemoteReceipt(id,name){try{const r=await apiFetch('/api/receipts/'+encodeURIComponent(id));if(!r.ok){const e=await readJson(r);throw Error(e.error||'Не удалось скачать чек')}const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}catch(e){toast(e.message)}}
+function renderMasterSetup(code){document.querySelector('#app').innerHTML=`<div class="login-page"><form class="login-card" id="master-setup">${brand}<h2>Первый вход мастера</h2><p class="subtitle">Выберите логин и пароль. Эта персональная ссылка используется только один раз.</p><label class="form-field" style="margin-top:20px">Логин<input name="username" value="master" pattern="[a-zA-Z0-9_.-]{3,60}" autocomplete="username" required></label><label class="form-field">Пароль — от 12 символов<input name="password" type="password" minlength="12" maxlength="256" autocomplete="new-password" required></label><label class="form-field">Повторите пароль<input name="confirmation" type="password" minlength="12" maxlength="256" autocomplete="new-password" required></label><p class="error" id="setup-error" role="alert"></p><button class="btn primary" type="submit">Сохранить и открыть кабинет</button></form></div>`;document.querySelector('#master-setup').onsubmit=async e=>{e.preventDefault();const values=Object.fromEntries(new FormData(e.target)),button=e.target.querySelector('[type=submit]');if(values.password!==values.confirmation){document.querySelector('#setup-error').textContent='Пароли не совпадают';return}button.disabled=true;try{const r=await apiFetch('/api/auth/setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,username:values.username,password:values.password})}),result=await readJson(r);if(!r.ok)throw Error(result.error);user=result;role=result.role;page='dashboard';await loadServer();render()}catch(err){document.querySelector('#setup-error').textContent=err.message;button.disabled=false}}}

@@ -596,6 +596,8 @@ const server = http.createServer(async (req, res) => {
       "/": "index.html",
       "/index.html": "index.html",
       "/app.js": "app.js",
+      "/api-client.js":"api-client.js",
+      "/config.js":"config.js",
       "/domain.js": "domain.js",
       "/transport.js": "transport.js",
       "/style.css": "style.css",

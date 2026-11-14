@@ -1,0 +1,7 @@
+Official YooKassa Checkout Widget, served unchanged for resuming existing embedded payments.
+Source: https://yookassa.ru/checkout-widget/v1/checkout-widget.js
+Resolved source: https://static.yoomoney.ru/checkout-client/checkout-widget.js
+Retrieved: 2026-11-14
+SHA-256: 9e43618b6a51ca9a4551e5760b27208b213fcd2f3f5c99cc797262f7c4aa6e04
+New payments use the hosted redirect checkout.
+Bundled third-party notices are preserved in the JavaScript.

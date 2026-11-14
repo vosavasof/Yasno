@@ -1,6 +1,7 @@
 // Official YooKassa iframe widget. A browser event never grants credits: the
 // caller verifies the order on the server before displaying a successful result.
 import{CHECKOUT_SCRIPTS}from'./security-policy.js';
+export const WIDGET_SOURCES=[new URL('./yookassa-sdk.js',import.meta.url).href,...CHECKOUT_SCRIPTS];
 let loading;
 function loadScript(src){
  return new Promise((resolve,reject)=>{
@@ -15,8 +16,8 @@ export function loadCheckoutWidget(){
  if(window.YooMoneyCheckoutWidget)return Promise.resolve(window.YooMoneyCheckoutWidget);
  if(loading)return loading;
  loading=(async()=>{
-  for(const [index,src]of CHECKOUT_SCRIPTS.entries()){
-   try{return await loadScript(src)}catch(error){if(index===CHECKOUT_SCRIPTS.length-1)throw error}
+  for(const [index,src]of WIDGET_SOURCES.entries()){
+   try{return await loadScript(src)}catch(error){if(index===WIDGET_SOURCES.length-1)throw error}
   }
  })().catch(error=>{loading=null;throw error});
  return loading;

@@ -608,6 +608,8 @@ const server = http.createServer(async (req, res) => {
       "/index.html": "index.html",
       "/app.js": "app.js",
       "/payment-widget.js":"payment-widget.js",
+      "/yookassa-sdk.js":"yookassa-sdk.js",
+      "/yookassa-sdk-source.txt":"yookassa-sdk-source.txt",
       "/security-policy.js":"security-policy.js",
       "/xlsx-reader.js":"xlsx-reader.js",
       "/xlsx-reader-LICENSE.txt":"xlsx-reader-LICENSE.txt",

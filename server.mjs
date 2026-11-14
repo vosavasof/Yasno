@@ -1,3 +1,4 @@
+import{familyCanEnter}from'./dist/management.js';
 import{handlePayments}from'./backend/yookassa.js';
 import http from "node:http";
 import { DatabaseSync } from "node:sqlite";
@@ -141,21 +142,21 @@ const sessions = (req) => {
     if (
       !link ||
       link.family !== actor.family ||
-      !getState().children.some((c) => c.family === actor.family)
+      !familyCanEnter(getState(),actor.family,link.created_at)
     )
       return null;
   }
   return { ...actor, authMode: actor.role === "master" ? "password" : "link" };
 };
 function newLink(family, label, days) {
-  if (!getState().children.some((c) => c.family === family))
+  if (!familyCanEnter(getState(),family))
     throw Error("Семья не найдена");
   if (!Number.isInteger(days) || days < 1 || days > 3650)
     throw Error("Срок ссылки: от 1 до 3650 дней");
   const id = crypto.randomUUID(),
     token = linkToken(id),
     username = "parentlink:" + id,
-    created = Date.now(),
+    created = Math.max(Date.now(),(getState().familyAccessRevokedAt?.[family]||0)+1),
     expires = created + days * 86400000;
   db.prepare(
     "INSERT INTO parent_links(id,token_hash,family,label,created_at,expires,revoked) VALUES(?,?,?,?,?,?,0)",
@@ -179,7 +180,7 @@ function newLink(family, label, days) {
   return db.prepare("SELECT * FROM parent_links WHERE id=?").get(id);
 }
 function linkView(link, req) {
-  const active = !link.revoked && link.expires > Date.now(),
+  const active = !link.revoked && link.expires > Date.now() && familyCanEnter(getState(),link.family,link.created_at),
     token = linkToken(link.id),
     known = hashToken(token) === link.token_hash,
     origin = process.env.PUBLIC_ORIGIN || `http://${req.headers.host}`;
@@ -190,7 +191,7 @@ function linkView(link, req) {
     createdAt: link.created_at,
     expiresAt: link.expires,
     lastUsed: link.last_used,
-    status: link.revoked
+    status: link.revoked || link.created_at <= (getState().familyAccessRevokedAt?.[link.family]||0)
       ? "revoked"
       : link.expires <= Date.now()
         ? "expired"
@@ -337,7 +338,7 @@ const server = http.createServer(async (req, res) => {
         return reply(res, 200, {
           lessons: s.lessons
             .filter(
-              (l) => new Date(l.date + "T" + l.time + ":00+05:00") > new Date(),
+              (l) => l.status!=="cancelled"&& new Date(l.date + "T" + l.time + ":00+05:00") > new Date(),
             )
             .map((l) => ({
               id: l.id,
@@ -390,7 +391,7 @@ const server = http.createServer(async (req, res) => {
               )
               .get(hashToken(raw), Date.now())
           : null;
-        if (!link || !getState().children.some((c) => c.family === link.family))
+        if (!link || !familyCanEnter(getState(),link.family,link.created_at))
           return reply(res, 401, {
             error:
               "Ссылка недействительна, отозвана или срок её действия истёк. Попросите мастера выдать новую ссылку.",
@@ -439,7 +440,7 @@ const server = http.createServer(async (req, res) => {
         if (actor.role !== "master")
           return reply(res, 403, { error: "Только для мастера" });
         const family = url.searchParams.get("family");
-        if (!getState().children.some((c) => c.family === family))
+        if (!getState().children.some(c=>c.family===family))
           return reply(res, 404, { error: "Семья не найдена" });
         const links = db
           .prepare(
@@ -581,7 +582,7 @@ const server = http.createServer(async (req, res) => {
             validateRestore(a.state);
             next = a.state;
             next.revision = previous.revision + 1;
-          } else next = applyAction(structuredClone(previous), a.action, actor);
+          } else {if(a.action.type==='child-archive'&&db.prepare("SELECT json FROM yasna_payment_orders WHERE status NOT IN ('succeeded','canceled')").all().some(r=>JSON.parse(r.json).child===a.action.child))throw Error('Сначала завершите или отмените незавершённую оплату ребёнка.');next = applyAction(structuredClone(previous), a.action, actor);}
           backup(previous);
           db.prepare("UPDATE state SET json=? WHERE id=1").run(
             JSON.stringify(next),
@@ -605,6 +606,11 @@ const server = http.createServer(async (req, res) => {
       "/": "index.html",
       "/index.html": "index.html",
       "/app.js": "app.js",
+      "/xlsx-reader.js":"xlsx-reader.js",
+      "/xlsx-reader-LICENSE.txt":"xlsx-reader-LICENSE.txt",
+      "/management.js":"management.js",
+      "/operations.css":"operations.css",
+      "/import-data.js":"import-data.js",
       "/mobile-ui.js":"mobile-ui.js",
       "/mobile.css":"mobile.css",
       "/yasna-logo-light.webp":"yasna-logo-light.webp",
@@ -627,6 +633,7 @@ const server = http.createServer(async (req, res) => {
       ".css": "text/css; charset=utf-8",
       ".png": "image/png",
       ".webp":"image/webp",
+      ".txt":"text/plain; charset=utf-8",
       ".svg": "image/svg+xml",
     };
     res.writeHead(200, {

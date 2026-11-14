@@ -74,7 +74,7 @@ const click = (s) => {
   const el = document.querySelector(s);
   assert.ok(el, s);
   assert.equal(typeof el.onclick, "function", s);
-  return el.onclick();
+  return el.onclick({target:el,currentTarget:el,preventDefault(){}});
 };
 function fill(form, values) {
   for (const [k, v] of Object.entries(values)) {
@@ -170,4 +170,12 @@ test("master-only login, shareable family link management, parent link entry and
   } finally {
     await app.stop();
   }
+});
+
+test('master manages parents and child archive, moves/cancels classes and imports a CSV through the UI',async()=>{
+ const app=await startServer();try{const masterCookie=await app.login();await boot(app,{cookie:masterCookie});click('[data-page="clients"]');click('[data-action="addparent"]');await submit(document.querySelector('#dialog-form'),{name:'Анна Проверка',phone:'+79001234567',email:'anna@example.test'});let s=await(await app.api('/api/state',{cookie:masterCookie})).json();assert.equal(s.parents.length,1);const family=s.parents[0].family;
+ click('[data-action="addchild"]');let form=document.querySelector('#dialog-form');form.querySelector(`[name=family] option[value="${family}"]`).setAttribute('selected','');await submit(form,{name:'Маша Проверка',age:8});s=await(await app.api('/api/state',{cookie:masterCookie})).json();assert.equal(s.children[0].family,family);const child=s.children[0].id;click(`[data-child="${child}"]`);click(`[data-archivechild="${child}"]`);await click('#archive-confirm');await settle();assert.equal(document.querySelector(`[data-child="${child}"]`),null);click('[data-clienttab="archive"]');click(`[data-child="${child}"]`);await click(`[data-restorechild="${child}"]`);await settle();assert.equal(document.querySelector('#modal-root').textContent,'');click('[data-clienttab="children"]');assert.ok(document.querySelector(`[data-child="${child}"]`));
+ s=await(await app.api('/api/state',{cookie:masterCookie})).json();const create=await app.api('/api/action',{cookie:masterCookie,body:{revision:s.revision,action:{type:'lesson',title:'Тест расписания',date:'2030-01-20',time:'12:00',duration:90,lessonType:'group',capacity:6}}});assert.equal(create.status,200);s=await create.json();const lesson=s.lessons[0].id;await boot(app,{cookie:masterCookie});click('[data-page="schedule"]');let calendar=document.querySelector('#calendar-date');calendar.value='2030-01-20';calendar.dispatchEvent(new window.Event('change'));click(`[data-movelesson="${lesson}"]`);await submit(document.querySelector('#dialog-form'),{date:'2030-01-21',time:'13:00',duration:75,reason:'Новое время'});s=await(await app.api('/api/state',{cookie:masterCookie})).json();assert.equal(s.lessons[0].date,'2030-01-21');click(`[data-cancellesson="${lesson}"]`);await submit(document.querySelector('#dialog-form'),{reason:'Отмена для проверки'});s=await(await app.api('/api/state',{cookie:masterCookie})).json();assert.equal(s.lessons[0].status,'cancelled');
+ click('[data-page="clients"]');click('[data-action="importdata"]');const csv='ID;ФИО;Возраст;Родитель;Телефон;Остаток\nmy1;Петя Импорт;9;Мама Импорт;+79002345678;3';await document.querySelector('#import-file').onchange({target:{files:[{name:'clients.csv',size:csv.length,arrayBuffer:async()=>new TextEncoder().encode(csv).buffer}]}});click('#import-validate');assert.ok(document.querySelector('#import-confirm'));assert.equal((await(await app.api('/api/state',{cookie:masterCookie})).json()).children.length,1);document.querySelector('#import-confirm').click();await waitFor('[data-child]');for(let i=0;i<30&&document.querySelector('#import-confirm');i++)await settle();s=await(await app.api('/api/state',{cookie:masterCookie})).json();assert.equal(s.children.length,2);assert.equal(s.children.find(c=>c.name==='Петя Импорт').balance,3);
+ }finally{await app.stop()}
 });

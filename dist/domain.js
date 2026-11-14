@@ -1,3 +1,5 @@
+import{applyImport}from'./import-data.js';
+import{applyManagement,parentsFor}from'./management.js';
 export const TODAY = "2026-11-14";
 export const emptyState = () => ({
   version: 1,
@@ -10,6 +12,9 @@ export const emptyState = () => ({
     credits: 4,
   },
   children: [],
+  parents: [],
+  familyAccessRevokedAt: {},
+  lessonUpdates: [],
   lessons: [],
   bookings: [],
   payments: [],
@@ -24,10 +29,12 @@ export function applyAction(
   actor = { role: "master" },
   now = new Date(),
 ) {
+  if(a.type==="import"){if(actor.role!=="master")throw Error("Только для мастера");applyImport(s,a,now);s.revision++;return s}
+  if(applyManagement(s,a,actor,now)){s.revision++;return s}
   const isMaster = actor.role === "master";
   const child = (id) => {
     const c = s.children.find((c) => c.id === id);
-    if (!c) throw Error("Ребёнок не найден");
+    if (!c || c.archived) throw Error("Ребёнок не найден или находится в архиве");
     if (!isMaster && c.family !== actor.family) throw Error("Нет доступа");
     return c;
   };
@@ -48,7 +55,7 @@ export function applyAction(
   if (a.type === "book") {
     child(a.child);
     const l = s.lessons.find((l) => l.id === a.lesson);
-    if (!l) throw Error("Занятие не найдено");
+    if (!l || l.status === "cancelled") throw Error("Занятие не найдено или отменено");
     if (new Date(l.date + "T" + l.time + ":00+05:00") <= now)
       throw Error("Запись на прошедшее занятие закрыта");
     if (
@@ -116,7 +123,7 @@ export function applyAction(
     );
   } else if (a.type === "cancel") {
     const b = s.bookings.find((b) => b.id === a.booking);
-    if (!b || b.status !== "booked")
+    if (!b || !["booked","waitlist"].includes(b.status))
       throw Error("Отменить можно только предстоящую запись");
     child(b.child);
     const l = s.lessons.find((l) => l.id === b.lesson);
@@ -205,7 +212,9 @@ export function applyAction(
     log("Добавлено занятие «" + a.title + "»");
   } else if (a.type === "child") {
     master();
-    const family = s.children.find((c) => c.family === a.family);
+    s.parents=parentsFor(s);
+    const contact=s.parents.find(p=>p.family===a.family&&!p.archived);
+    const family = contact ? {family:contact.family,parent:contact.name,phone:contact.phone} : s.children.find((c) => c.family === a.family&&!c.archived);
     if (family) {
       a.parent = family.parent;
       a.phone = family.phone;
@@ -228,6 +237,7 @@ export function applyAction(
       balance: 0,
       color: "peach",
     });
+    const added=s.children.at(-1);added.email=contact?.email||"";if(!s.parents.some(p=>p.family===added.family&&!p.archived))s.parents.push({id:uid(),family:added.family,name:added.parent,phone:added.phone,email:"",archived:false});
     log("Добавлен ребёнок " + a.name);
   } else if (a.type === "settings") {
     master();
@@ -269,12 +279,12 @@ export function applyAction(
     const r = (s.applications || []).find((r) => r.id === a.application);
     if (!r || r.status !== "contacted")
       throw Error("Сначала свяжитесь с родителем и отметьте это в заявке");
-    const family = a.family
-      ? s.children.find((c) => c.family === a.family)
-      : null;
+    s.parents=parentsFor(s);
+    const primary=s.parents.find(p=>p.family===a.family&&!p.archived);
+    const family = primary ? {family:primary.family,parent:primary.name,phone:primary.phone,email:primary.email} : null;
     if (a.family && !family) throw Error("Семья не найдена");
     const lesson = a.lesson ? s.lessons.find((l) => l.id === a.lesson) : null;
-    if (a.lesson && !lesson) throw Error("Занятие не найдено");
+    if (a.lesson && (!lesson || lesson.status === "cancelled")) throw Error("Занятие не найдено");
     if (lesson) {
       if (new Date(lesson.date + "T" + lesson.time + ":00+05:00") <= now)
         throw Error("Выберите предстоящее занятие");
@@ -332,7 +342,7 @@ export function applyAction(
 export function familyView(s, family) {
   const copy = structuredClone(s),
     ids = new Set(
-      s.children.filter((c) => c.family === family).map((c) => c.id),
+      s.children.filter((c) => c.family === family&&!c.archived).map((c) => c.id),
     );
   copy.children = copy.children.filter((c) => ids.has(c.id));
   copy.bookings = copy.bookings.filter((b) => ids.has(b.child));
@@ -347,6 +357,10 @@ export function familyView(s, family) {
   );
   copy.payments = copy.payments.filter((p) => ids.has(p.child));
   copy.history = copy.history.filter((h) => ids.has(h.child));
+  delete copy.lastImport;
+  copy.parents=parentsFor(s).filter(p=>p.family===family&&!p.archived);
+  copy.familyAccessRevokedAt={};
+  copy.lessonUpdates=(s.lessonUpdates||[]).filter(u=>u.children.some(id=>ids.has(id))).map(u=>({...u,children:u.children.filter(id=>ids.has(id))}));
   copy.activity = [];
   copy.reminders = [];
   copy.applications = [];
@@ -390,8 +404,12 @@ export function validateState(s) {
     lessons = new Set(s.lessons.map((l) => l.id));
   if (children.size !== s.children.length || lessons.size !== s.lessons.length)
     fail();
+  if(s.parents!==undefined&&(!Array.isArray(s.parents)||s.parents.length>=100000||new Set(s.parents.map(p=>p.id)).size!==s.parents.length||s.parents.some(p=>!id(p.id)||!id(p.family)||!str(p.name)||!str(p.phone)||!str(p.email)||p.archived!==undefined&&typeof p.archived!=='boolean')))fail();
+  if(s.familyAccessRevokedAt!==undefined&&(!s.familyAccessRevokedAt||typeof s.familyAccessRevokedAt!=='object'||Array.isArray(s.familyAccessRevokedAt)||Object.entries(s.familyAccessRevokedAt).some(([family,t])=>!id(family)||!Number.isSafeInteger(t)||t<0)))fail();
+  if(s.lessonUpdates!==undefined&&(!Array.isArray(s.lessonUpdates)||s.lessonUpdates.length>2000||s.lessonUpdates.some(u=>!id(u.id)||!id(u.lesson)||!str(u.title)||!['cancelled','moved'].includes(u.kind)||!Array.isArray(u.children)||u.children.some(c=>!id(c))||!str(u.date)||!str(u.time)||!str(u.oldDate)||!str(u.oldTime)||!str(u.reason))))fail();
   for (const c of s.children)
     if (
+      (c.archived!==undefined&&typeof c.archived!=="boolean") ||
       !id(c.id) ||
       !id(c.family) ||
       !str(c.name) ||
@@ -407,6 +425,7 @@ export function validateState(s) {
       fail();
   for (const l of s.lessons)
     if (
+      (l.status!==undefined&&!["active","cancelled"].includes(l.status)) ||
       !id(l.id) ||
       !str(l.title) ||
       !str(l.format) ||
@@ -451,7 +470,7 @@ export function validateState(s) {
       !Number.isFinite(p.amount) ||
       p.amount <= 0 ||
       !Number.isInteger(p.credits) ||
-      p.credits < 1 ||
+      p.credits < (p.provider === "import" ? 0 : 1) ||
       !str(p.date) ||
       !str(p.method)
     )
@@ -552,7 +571,7 @@ export function submitApplication(s, input, now = new Date()) {
     throw Error("Необходимо согласие на использование данных для связи");
   if (lesson) {
     const l = s.lessons.find((l) => l.id === lesson);
-    if (!l || new Date(l.date + "T" + l.time + ":00+05:00") <= now)
+    if (!l || l.status === "cancelled" || new Date(l.date + "T" + l.time + ":00+05:00") <= now)
       throw Error("Выберите предстоящее занятие или помощь с подбором");
   }
   const current = s.applications || [];
@@ -592,7 +611,7 @@ export function submitApplication(s, input, now = new Date()) {
 export function notificationsFor(s, actor, now = new Date()) {
   const result = [],
     master = actor.role === "master",
-    children = s.children.filter((c) => master || c.family === actor.family),
+    children = s.children.filter((c) => !c.archived&&(master || c.family === actor.family)),
     own = new Set(children.map((c) => c.id));
   for (const c of children)
     if (c.balance <= s.settings.remindAt)
@@ -669,5 +688,6 @@ export function notificationsFor(s, actor, now = new Date()) {
           });
       }
   }
+  for(const u of s.lessonUpdates||[])if(master||u.children.some(id=>own.has(id)))result.unshift({id:'schedule-change:'+u.id,title:u.kind==='cancelled'?'Занятие отменено':'Занятие перенесено',text:u.title+' · '+u.oldDate+' '+u.oldTime+(u.kind==='moved'?' → '+u.date+' '+u.time:'')+(u.reason?' · '+u.reason:''),page:'schedule',date:u.date,icon:'calendar'});
   return result;
 }

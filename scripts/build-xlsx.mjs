@@ -1,0 +1,4 @@
+import{build}from'esbuild';
+// Keep XLSX decoding local and compatible with the site's strict CSP. Synchronous
+// unzip also lets us bound the total expanded XML before allocating its output.
+await build({stdin:{contents:"export {readSheet} from 'read-excel-file/universal';",resolveDir:process.cwd()},bundle:true,format:'esm',platform:'browser',minify:true,outfile:'dist/xlsx-reader.js',plugins:[{name:'bounded-local-xlsx',setup(b){b.onLoad({filter:/[\\/]zip[\\/]unzipFromArrayBuffer\.js$/},()=>({loader:'js',resolveDir:process.cwd(),contents:`import{unzipSync}from'fflate';export default async function(input,{filter}={}){let total=0;return unzipSync(new Uint8Array(input),{filter:file=>{if(filter&&!filter({path:file.name}))return false;total+=file.originalSize;if(total>25*1024*1024)throw Error('Таблица слишком большая после распаковки. Разделите выгрузку на несколько файлов.');return true}})}`}))}}]});

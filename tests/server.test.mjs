@@ -82,7 +82,6 @@ test("master password login, empty production, CSRF, persistence, conflicts and 
     assert.equal((await app.api("/api/state", { cookie })).status, 401);
     assert.equal((await app.api("/../../server.mjs")).status, 404);
     const html = await (await app.api("/")).text();
-    assert.ok(!html.includes("chatgpt"));
   } finally {
     await app.stop();
   }

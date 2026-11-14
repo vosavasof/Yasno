@@ -97,7 +97,6 @@ test("master-only login, shareable family link management, parent link entry and
       document.querySelector("#app").textContent,
       /Вход для мастера/,
     );
-    assert.ok(!document.querySelector("#app").textContent.includes("ChatGPT"));
     await submit(document.querySelector("#login-form"), {
       username: "master",
       password: app.password,

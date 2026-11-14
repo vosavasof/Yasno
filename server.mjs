@@ -1,3 +1,4 @@
+import{handlePayments}from'./backend/yookassa.js';
 import http from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -32,6 +33,8 @@ const db = new DatabaseSync(resolve(dir, "yasna.sqlite"));
 db.exec(
   "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS state(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS parent_links(id TEXT PRIMARY KEY,token_hash TEXT NOT NULL UNIQUE,family TEXT NOT NULL,label TEXT NOT NULL,created_at INTEGER NOT NULL,expires INTEGER NOT NULL,last_used INTEGER,revoked INTEGER NOT NULL DEFAULT 0); CREATE TABLE IF NOT EXISTS users(username TEXT PRIMARY KEY,salt TEXT NOT NULL,hash TEXT NOT NULL,role TEXT NOT NULL,family TEXT); CREATE TABLE IF NOT EXISTS notification_reads(username TEXT PRIMARY KEY,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,username TEXT NOT NULL REFERENCES users(username),expires INTEGER NOT NULL);",
 );
+db.exec(readFileSync(resolve(root,'backend/migrations/0002_yookassa.sql'),'utf8').replaceAll('CREATE TABLE ', 'CREATE TABLE IF NOT EXISTS '));
+const paymentDB={prepare(sql,args=[]){return{bind(...values){return paymentDB.prepare(sql,values)},async first(){return db.prepare(sql).get(...args)||null},async all(){return{results:db.prepare(sql).all(...args)}},async run(){const r=db.prepare(sql).run(...args);return{meta:{changes:Number(r.changes)}}}}}};
 if (!db.prepare("SELECT id FROM state").get()) {
   const initial = emptyState();
   db.prepare("INSERT INTO state VALUES(1,?)").run(JSON.stringify(initial));
@@ -267,13 +270,19 @@ const server = http.createServer(async (req, res) => {
         const origin = req.headers.origin;
         const expected =
           process.env.PUBLIC_ORIGIN || `http://${req.headers.host}`;
-        if (origin !== expected)
+        if (origin !== expected && url.pathname!=="/api/payments/webhook")
           return reply(res, 403, { error: "Запрос с недоверенного адреса" });
         if (
           !req.headers["content-type"]?.startsWith("application/json") &&
           !["/api/logout"].includes(url.pathname)
         )
           return reply(res, 415, { error: "Требуется JSON" });
+      }
+      if(url.pathname.startsWith('/api/payments/')){
+        const headers=new Headers();for(const [k,v] of Object.entries(req.headers))if(typeof v==='string')headers.set(k,v);
+        const request=new Request((process.env.PUBLIC_ORIGIN||`http://${req.headers.host}`)+url.pathname+url.search,{method:req.method,headers,...(req.method==='POST'?{body:JSON.stringify(await body(req,16384))}:{})});
+        const response=await handlePayments(request,{DB:paymentDB,PARENT_LINK_SECRET:linkKey.toString('hex'),PUBLIC_APP_URL:(process.env.PUBLIC_ORIGIN||`http://${req.headers.host}`)+'/'},actor,{readState:async()=>getState(),commit:async(previous,next)=>{db.exec('BEGIN IMMEDIATE');try{if(getState().revision!==previous.revision)throw Object.assign(Error('Данные обновились'),{status:409});backup(previous);db.prepare('UPDATE state SET json=? WHERE id=1').run(JSON.stringify(next));db.exec('COMMIT')}catch(e){if(db.isTransaction)db.exec('ROLLBACK');throw e}}});
+        res.writeHead(response.status,Object.fromEntries(response.headers));return res.end(Buffer.from(await response.arrayBuffer()));
       }
       if (url.pathname === "/api/session" && req.method === "GET")
         return reply(res, 200, actor || { role: null, authMode: "password" });

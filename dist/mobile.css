@@ -17,3 +17,6 @@ html{scroll-padding-top:90px;-webkit-text-size-adjust:100%}body{font-family:var(
 @media(prefers-reduced-motion:reduce){.sidebar{transition:none}}
 
 @media(max-width:480px){.stats>.stat:last-child:nth-child(3){grid-column:1/-1}}
+
+.online-payments{margin-bottom:24px}.online-order{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:18px 0;border-top:1px solid var(--line);margin-top:16px}.online-order p{margin:7px 0 0}.online-order-actions{display:flex;align-items:center;gap:16px;flex-wrap:wrap}#yookassa-form .form-field{margin-top:18px}#yookassa-form .inline-notice{margin-top:20px}#yookassa-form .check-label{margin:20px 0}.online-order .text-link{min-height:44px}
+@media(max-width:760px){.online-order{align-items:flex-start;flex-direction:column}.online-order-actions{width:100%}.online-order-actions .btn{flex:1;justify-content:center}#yookassa-form{scroll-margin-top:85px}.online-order b{font-size:13px}}

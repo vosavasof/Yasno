@@ -1,3 +1,4 @@
+import{handlePayments}from'./yookassa.js';
 import{accessActor,handleAccess}from'./access.js';
 import{emptyState,applyAction,familyView,validateState,submitApplication,notificationsFor}from'../dist/domain.js';
 const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
@@ -12,12 +13,14 @@ async function limit(env,request){const key=(request.headers.get('cf-connecting-
 function toBytes(data){return Uint8Array.from(atob(data),c=>c.charCodeAt(0))}
 function toBase64(buffer){const bytes=new Uint8Array(buffer);let result='';for(let i=0;i<bytes.length;i+=16384)result+=String.fromCharCode(...bytes.subarray(i,i+16384));return btoa(result)}
 async function storeReceipt(env,receipt){const match=receipt.data.match(/^data:(application\/pdf|image\/(?:png|jpeg));base64,(.+)$/s);if(!match)throw error('Неверный формат чека');let bytes;try{bytes=toBytes(match[2])}catch{throw error('Не удалось прочитать файл чека')}if(bytes.length>2*1024*1024)throw error('Размер чека — не более 2 МБ');const key='receipts/'+crypto.randomUUID();await env.BUCKET.put(key,bytes,{httpMetadata:{contentType:match[1]}});return{name:receipt.name,key,type:match[1]}}
-async function coreApi(request,env){try{if(!env.DB)throw error('База данных ещё не подключена. Повторите позже.',503);const url=new URL(request.url),path=url.pathname;if(request.method==='POST'&&![url.origin,new URL(env.PUBLIC_APP_URL||url.origin).origin].includes(request.headers.get('origin')))throw error('Запрос с недоверенного адреса',403);
+async function coreApi(request,env){try{if(!env.DB)throw error('База данных ещё не подключена. Повторите позже.',503);const url=new URL(request.url),path=url.pathname;if(request.method==='POST'&&path!=='/api/payments/webhook'&&![url.origin,new URL(env.PUBLIC_APP_URL||url.origin).origin].includes(request.headers.get('origin')))throw error('Запрос с недоверенного адреса',403);
  if(path==='/api/health'){await env.DB.prepare('SELECT id FROM yasna_state LIMIT 1').first();await env.DB.prepare('SELECT email FROM yasna_members LIMIT 1').first();return json({ok:true,storage:'database',files:!!env.BUCKET,mode:'production'})}
+ if(path==='/api/payments/webhook')return handlePayments(request,env,null,{readState:()=>state(env),commit:(a,b)=>commit(env,a,b)});
  const actor=await accessActor(request,env)||await actorFor(request,env);const access=await handleAccess(request,env,actor);if(access)return access;
  if(path==='/api/session'&&request.method==='GET')return json(actor||{role:null,authMode:'chatgpt',signedIn:!!request.headers.get('oai-authenticated-user-id')});
  if(path==='/api/public/lessons'&&request.method==='GET'){const s=await state(env);return json({lessons:s.lessons.filter(l=>new Date(l.date+'T'+l.time+':00+05:00')>new Date()).map(l=>({id:l.id,date:l.date,time:l.time,duration:l.duration,title:l.title,format:l.format,lessonType:l.lessonType||'group',age:l.age}))})}
  if(path==='/api/public/applications'&&request.method==='POST'){await limit(env,request);const input=await readBody(request,16384),previous=await state(env),next=structuredClone(previous),result=submitApplication(next,input);await commit(env,previous,next);return json(result,201)}
+ const paymentResponse=await handlePayments(request,env,actor,{readState:()=>state(env),commit:(a,b)=>commit(env,a,b)});if(paymentResponse)return paymentResponse;
  if(!actor)throw error('Войдите в кабинет или дождитесь выдачи доступа мастером',401);
  if(path==='/api/state'&&request.method==='GET')return json(publicView(await state(env),actor));
  if(path==='/api/notifications'&&request.method==='GET')return json({items:await notifications(env,await state(env),actor)});

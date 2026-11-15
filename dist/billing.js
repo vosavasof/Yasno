@@ -17,3 +17,11 @@ export function paymentQuote(settings,amount,advanceMinor=0){
  if(credits>100000)throw Error('Слишком большое количество занятий');
  return{amountMinor,unitPriceMinor,credits,advanceBeforeMinor:advanceMinor,advanceAfterMinor};
 }
+export function lessonPurchase(settings,quantity,advanceMinor=0){
+ const lessons=Number(quantity);
+ if(!Number.isSafeInteger(lessons)||lessons<1||lessons>100000)throw Error('Укажите целое количество занятий от 1 до 100 000');
+ if(!Number.isSafeInteger(advanceMinor)||advanceMinor<0||advanceMinor>100000000)throw Error('Проверьте денежный аванс ребёнка');
+ const required=lessonPriceMinor(settings)*lessons-advanceMinor;
+ if(required<=0)throw Error('Это количество занятий уже покрывается авансом. Выберите больше занятий или оплату на сумму.');
+ return paymentQuote(settings,(required/100).toFixed(2),advanceMinor);
+}

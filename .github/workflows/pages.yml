@@ -3,6 +3,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      api_base:
+        description: HTTPS API address for restoring or changing the connected server
+        required: false
+        type: string
 permissions:
   contents: read
   pages: write
@@ -27,7 +32,7 @@ jobs:
       - run: npm test
       - name: Build web interface
         env:
-          YASNA_SHARED_API_BASE: ${{ vars.YASNA_SHARED_API_BASE }}
+          YASNA_SHARED_API_BASE: ${{ inputs.api_base || vars.YASNA_SHARED_API_BASE }}
           PAGES_BASE_PATH: /Yasno/
         run: node scripts/build-pages.mjs
       - uses: actions/configure-pages@v5

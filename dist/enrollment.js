@@ -3,7 +3,7 @@ export function enrollApplication(s,input,now=new Date(),actor=null){
  if(!/^https:\/\//.test(s.settings.privacyDocumentUrl||''))throw Error('Мастер ещё не добавил документ о персональных данных');
  const response=r=>{const l=s.lessons.find(l=>l.id===r.lesson);return{id:r.id,status:r.status,child:r.child,family:r.family,booking:r.booking,plan:r.plan||'trial',lesson:l?{id:l.id,title:l.title,date:l.date,time:l.time}:null}};
  const key=input.registrationKey;if(typeof key!=='string'||!/^[a-f0-9-]{36}$/.test(key))throw Error('Обновите форму и повторите запись');
- const old=s.applications.find(a=>a.registrationKey===key);if(old){if(!s.bookings.some(b=>b.id===old.booking&&b.status!=='cancelled'))throw Error('Эта запись уже отменена');return response(old)}
+ const old=s.applications.find(a=>a.registrationKey===key);if(old){if(now.getTime()-Date.parse(old.createdAt)>900000||(s.familyAccessRevokedAt?.[old.family]||0)>=Date.parse(old.confirmedAt))throw Object.assign(Error('Запись уже создана. Используйте действующую ссылку семьи или обратитесь к мастеру.'),{status:403});if(!s.bookings.some(b=>b.id===old.booking&&b.status!=='cancelled'))throw Error('Эта запись уже отменена');return response(old)}
  const lesson=s.lessons.find(l=>l.id===input.lesson&&l.status!=='cancelled');
  if(!lesson||new Date(lesson.date+'T'+lesson.time+':00+05:00')<=now)throw Error('Выберите предстоящее занятие');
  if(s.bookings.filter(b=>b.lesson===lesson.id&&!['cancelled','waitlist'].includes(b.status)).length>=lesson.capacity)throw Object.assign(Error('Все места уже заняты. Выберите другое занятие'),{status:409});

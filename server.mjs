@@ -148,12 +148,13 @@ const sessions = (req) => {
   }
   return { ...actor, authMode: actor.role === "master" ? "password" : "link" };
 };
-function newLink(family, label, days) {
+function newLink(family, label, days, fixedId=null) {
+  if(fixedId){const existing=db.prepare("SELECT * FROM parent_links WHERE id=?").get(fixedId);if(existing){if(existing.family!==family||existing.revoked||existing.expires<=Date.now()||!familyCanEnter(getState(),family,existing.created_at))throw Object.assign(Error("Ссылка отозвана. Обратитесь к мастеру."),{status:403});return existing}}
   if (!familyCanEnter(getState(),family))
     throw Error("Семья не найдена");
   if (!Number.isInteger(days) || days < 1 || days > 3650)
     throw Error("Срок ссылки: от 1 до 3650 дней");
-  const id = crypto.randomUUID(),
+  const id = fixedId||crypto.randomUUID(),
     token = linkToken(id),
     username = "parentlink:" + id,
     created = Math.max(Date.now(),(getState().familyAccessRevokedAt?.[family]||0)+1),
@@ -347,7 +348,7 @@ const server = http.createServer(async (req, res) => {
       if(url.pathname==='/api/public/lessons'&&req.method==='GET')return reply(res,200,publicEnrollment(getState()));
       if(url.pathname==='/api/public/enroll'&&req.method==='POST'){
         if(limited(req,'intake'))return reply(res,429,{error:'Слишком много заявок. Повторите позже.'});const input=await body(req,16384);db.exec('BEGIN IMMEDIATE');let result;try{const previous=getState(),next=structuredClone(previous);result=enrollApplication(next,input,new Date(),actor);if(next.revision!==previous.revision){backup(previous);db.prepare('UPDATE state SET json=? WHERE id=1').run(JSON.stringify(next))}db.exec('COMMIT')}catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error}
-        const link=newLink(result.family,'Первичная запись',365);return reply(res,201,{...result,parentLink:linkView(link,req)});
+        const link=newLink(result.family,'Первичная запись',365,result.id);return reply(res,201,{...result,parentLink:linkView(link,req)});
       }
       if (
         url.pathname === "/api/public/applications" &&

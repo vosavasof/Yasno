@@ -348,7 +348,11 @@ const server = http.createServer(async (req, res) => {
       if(url.pathname==='/api/public/lessons'&&req.method==='GET')return reply(res,200,publicEnrollment(getState()));
       if(url.pathname==='/api/public/enroll'&&req.method==='POST'){
         if(limited(req,'intake'))return reply(res,429,{error:'Слишком много заявок. Повторите позже.'});const input=await body(req,16384);db.exec('BEGIN IMMEDIATE');let result;try{const previous=getState(),next=structuredClone(previous);result=enrollApplication(next,input,new Date(),actor);if(next.revision!==previous.revision){backup(previous);db.prepare('UPDATE state SET json=? WHERE id=1').run(JSON.stringify(next))}db.exec('COMMIT')}catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error}
-        const link=newLink(result.family,'Первичная запись',365,result.id);return reply(res,201,{...result,parentLink:linkView(link,req)});
+        const link=newLink(result.family,'Первичная запись',365,result.id);
+        if(actor?.role==='master')return reply(res,201,result);
+        const token=randomBytes(32).toString('hex'),expires=Math.min(Date.now()+604800000,link.expires),username='parentlink:'+link.id;
+        db.prepare('INSERT INTO sessions VALUES(?,?,?)').run(hashToken(token),username,expires);
+        return reply(res,201,{...result,role:'parent',username,authMode:'link',authToken:token},{'Set-Cookie':cookie(token,Math.max(1,Math.floor((expires-Date.now())/1000)))});
       }
       if (
         url.pathname === "/api/public/applications" &&

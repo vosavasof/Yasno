@@ -1339,12 +1339,11 @@ function renderEnrollment() {
   }
   if (enrollmentSuccess) {
     document.querySelector("#app").innerHTML = shell(
-      `<section class="panel intake-success">${I('check')}<h1>Ребёнок записан</h1><p class="subtitle">Место закреплено. Оплатите сейчас или вернитесь к оплате позже в кабинете.</p>${enrollmentSuccess.lesson?`<p>${escape(enrollmentSuccess.lesson.title)} · ${dateLabel(enrollmentSuccess.lesson.date)} · ${enrollmentSuccess.lesson.time}</p>`:''}<p class="mini-note">Номер записи: ${escape(enrollmentSuccess.id.slice(0,8))}</p>${enrollmentSuccess.parentLink?.url?`<label class="form-field">Сохраните ссылку на кабинет<input id="new-parent-link" readonly value="${escape(enrollmentSuccess.parentLink.url)}"></label><p class="mini-note">Эта ссылка открывает кабинет вашей семьи. Сохраните её для повторного входа и не передавайте посторонним.</p><button class="text-link" id="copy-new-parent-link">Скопировать ссылку</button>`:''}<div class="modal-actions"><button class="btn primary" id="intake-pay-now">Оплатить сейчас</button><button class="btn" id="intake-pay-later">Оплатить позже</button><button class="text-link" id="intake-another">Записать ещё ребёнка</button></div></section>`,
+      `<section class="panel intake-success">${I('check')}<h1>Ребёнок записан</h1><p class="subtitle">Место закреплено. Оплатите сейчас или вернитесь к оплате позже в кабинете.</p>${enrollmentSuccess.lesson?`<p>${escape(enrollmentSuccess.lesson.title)} · ${dateLabel(enrollmentSuccess.lesson.date)} · ${enrollmentSuccess.lesson.time}</p>`:''}<p class="mini-note">Номер записи: ${escape(enrollmentSuccess.id.slice(0,8))}</p><p class="mini-note">Персональную ссылку для повторного входа в кабинет семьи выдаст мастер.</p><div class="modal-actions"><button class="btn primary" id="intake-pay-now">Оплатить сейчас</button><button class="btn" id="intake-pay-later">Оплатить позже</button><button class="text-link" id="intake-another">Записать ещё ребёнка</button></div></section>`,
     );
     document.querySelector("#intake-theme")?.addEventListener("click",toggleTheme);
   document.querySelector("#intake-back").onclick = () =>
       navigateEnrollment(false);
-    document.querySelector('#copy-new-parent-link')?.addEventListener('click',async()=>{const field=document.querySelector('#new-parent-link');try{await navigator.clipboard.writeText(field.value);toast('Ссылка скопирована')}catch{field.select();toast('Выделенная ссылка готова для копирования')}});
     document.querySelector('#intake-pay-later').onclick=()=>navigateEnrollment(false);
     document.querySelector('#intake-pay-now').onclick=async()=>{const {child,plan='trial'}=enrollmentSuccess;selectedChild=child;await navigateEnrollment(false);if(startupError){toast(startupError);return}familyPaymentModal(plan)};
     document.querySelector("#intake-another").onclick = () => {
@@ -1384,7 +1383,6 @@ function renderEnrollment() {
         result = enrollApplication(next, input, demoNow());
         saveLocal(next);
       }
-      if(result.status==='confirmed'&&backend&&user.role!=='master'&&!result.authToken&&result.parentLink?.url){const token=new URL(result.parentLink.url).hash.slice(8);const auth=await apiFetch('/api/parent-entry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})});if(!auth.ok)throw Error('Запись создана. Откройте кабинет по выданной ссылке')}
       if(backend&&result.status==='confirmed'){user=await readJson(await apiFetch('/api/session'));role=user.role;await loadServer()}
       enrollmentSuccess = result;
       registrationKey=crypto.randomUUID();
@@ -1571,6 +1569,17 @@ const notificationPoll = setInterval(async () => {
   } catch {}
 }, 30000);
 notificationPoll.unref?.();
+
+let masterSyncing=false;
+async function syncMasterRegistrations(){
+ const ready=()=>backend&&user.role==='master'&&!enrollmentMode&&document.visibilityState!=='hidden'&&!document.querySelector('.modal, #settings-form')&&!document.body.classList.contains('nav-open')&&!['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName);
+ if(masterSyncing||!ready())return;
+ masterSyncing=true;const owner=user.username||user.userId;
+ try{const response=await apiFetch('/api/state');if(response.status===401){expireSession();return}if(!response.ok)return;const next=await readJson(response);if(!ready()||(user.username||user.userId)!==owner||next.revision<=data.revision)return;data=next;render()}catch{}finally{masterSyncing=false}
+}
+const masterRegistrationPoll=setInterval(syncMasterRegistrations,15000);masterRegistrationPoll.unref?.();
+window.addEventListener?.('focus',syncMasterRegistrations);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState!=='hidden')void syncMasterRegistrations()});
 
 async function downloadRemoteReceipt(id,name){try{const r=await apiFetch('/api/receipts/'+encodeURIComponent(id));if(!r.ok){const e=await readJson(r);throw Error(e.error||'Не удалось скачать чек')}const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}catch(e){toast(e.message)}}
 function renderMasterSetup(code){document.querySelector('#app').innerHTML=`<div class="login-page"><form class="login-card" id="master-setup">${brand}<h2>Первый вход мастера</h2><p class="subtitle">Выберите логин и пароль. Эта персональная ссылка используется только один раз.</p><label class="form-field" style="margin-top:20px">Логин<input name="username" value="master" pattern="[a-zA-Z0-9_.-]{3,60}" autocomplete="username" required></label><label class="form-field">Пароль — от 12 символов<input name="password" type="password" minlength="12" maxlength="256" autocomplete="new-password" required></label><label class="form-field">Повторите пароль<input name="confirmation" type="password" minlength="12" maxlength="256" autocomplete="new-password" required></label><p class="error" id="setup-error" role="alert"></p><button class="btn primary" type="submit">Сохранить и открыть кабинет</button></form></div>`;document.querySelector('#master-setup').onsubmit=async e=>{e.preventDefault();const values=Object.fromEntries(new FormData(e.target)),button=e.target.querySelector('[type=submit]');if(values.password!==values.confirmation){document.querySelector('#setup-error').textContent='Пароли не совпадают';return}button.disabled=true;try{const r=await apiFetch('/api/auth/setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,username:values.username,password:values.password})}),result=await readJson(r);if(!r.ok)throw Error(result.error);user=result;role=result.role;page='dashboard';await loadServer();render()}catch(err){document.querySelector('#setup-error').textContent=err.message;button.disabled=false}}}

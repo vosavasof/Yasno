@@ -30,5 +30,5 @@ export async function enrollmentAccess(env,family,issueSession=true,registration
  let link=await env.DB.prepare('SELECT * FROM yasna_parent_links WHERE id=?').bind(registrationId).first();
  if(!link){try{link=await createLink(env,{family,label:'Первичная запись'},registrationId)}catch(error){link=await env.DB.prepare('SELECT * FROM yasna_parent_links WHERE id=?').bind(registrationId).first();if(!link)throw error}}
  if(link.family!==family||link.revoked||link.expires<=Date.now()||!familyCanEnter(await snapshot(env),family,link.created))throw fail('Ссылка отозвана. Обратитесь к мастеру.',403);
- return{parentLink:await view(env,link),...(issueSession?await makeSession(env,{role:'parent',family,userId:'parentlink:'+link.id,authMode:'link'},link.id):{})};
+ return issueSession?await makeSession(env,{role:'parent',family,userId:'parentlink:'+link.id,authMode:'link'},link.id):{};
 }

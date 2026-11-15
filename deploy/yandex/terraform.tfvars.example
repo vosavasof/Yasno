@@ -1,0 +1,6 @@
+folder_id           = "YOUR_FOLDER_ID"
+domain              = "workshop.example.ru"
+ssh_public_key_path = "/absolute/path/to/your/key.pub"
+admin_cidr          = "YOUR_PUBLIC_IP/32"
+zone                = "ru-central1-a"
+revision            = "main"

@@ -1,3 +1,5 @@
+import{createPush}from'./backend/push.mjs';
+import{enrollApplication,publicEnrollment}from'./dist/enrollment.js';
 import{securityPolicy}from'./dist/security-policy.js';
 import{familyCanEnter}from'./dist/management.js';
 import{handlePayments}from'./backend/yookassa.js';
@@ -120,12 +122,9 @@ try {
 const hashToken = (t) => createHash("sha256").update(t).digest("hex");
 const linkToken = (id) =>
   createHmac("sha256", linkKey).update(id).digest("base64url");
+const requestToken=req=>req.headers.authorization?.match(/^Bearer ([a-f0-9]{64})$/)?.[1]||req.headers.cookie?.split(';').map(s=>s.trim()).find(s=>s.startsWith('yasna_session='))?.slice(14);
 const sessions = (req) => {
-  const token = req.headers.cookie
-    ?.split(";")
-    .map((s) => s.trim())
-    .find((s) => s.startsWith("yasna_session="))
-    ?.slice(14);
+  const token=requestToken(req);
   if (!token) return null;
   const actor = db
     .prepare(
@@ -184,7 +183,7 @@ function linkView(link, req) {
   const active = !link.revoked && link.expires > Date.now() && familyCanEnter(getState(),link.family,link.created_at),
     token = linkToken(link.id),
     known = hashToken(token) === link.token_hash,
-    origin = process.env.PUBLIC_ORIGIN || `http://${req.headers.host}`;
+    origin = process.env.PUBLIC_APP_URL || process.env.PUBLIC_ORIGIN || `http://${req.headers.host}`;
   return {
     id: link.id,
     family: link.family,
@@ -197,7 +196,7 @@ function linkView(link, req) {
       : link.expires <= Date.now()
         ? "expired"
         : "active",
-    url: active && known ? new URL("/#parent=" + token, origin).href : null,
+    url: active && known ? (()=>{const u=new URL(origin);if(!u.pathname.endsWith('/'))u.pathname+='/';u.hash='parent='+token;u.search='';return u.href})() : null,
   };
 }
 function revokeLink(id) {
@@ -264,17 +263,22 @@ function backup(state) {
 }
 const validateRestore = validateState;
 const localOnly=process.env.YASNA_LOCAL_ONLY==='1';
+const push=createPush({db,dir,origin:process.env.PUBLIC_ORIGIN,enabled:!localOnly,resolveActor:sessionHash=>{const a=db.prepare('SELECT u.username,u.role,u.family FROM sessions s JOIN users u ON u.username=s.username WHERE s.token=? AND s.expires>?').get(sessionHash,Date.now());if(!a)return null;if(a.role==='parent'){const l=db.prepare('SELECT * FROM parent_links WHERE id=? AND revoked=0 AND expires>?').get(a.username.slice(11),Date.now());if(!l||!familyCanEnter(getState(),l.family,l.created_at))return null}return a},notifications:actor=>notificationsFor(getState(),actor)});
+const pushTimer=setInterval(()=>push.tick().catch(error=>console.warn('push_delivery_failed',error.message)),60000);pushTimer.unref();
 const server = http.createServer(async (req, res) => {
   if(localOnly&&!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host||''))return reply(res,403,{error:'Локальное приложение доступно только на этом компьютере'});
   try {
     const url = new URL(req.url, "http://localhost");
     if (url.pathname.startsWith("/api/")) {
+      const allowedOrigins=new Set([process.env.PUBLIC_ORIGIN||`http://${req.headers.host}`,...(!localOnly&&process.env.FRONTEND_ORIGIN?[process.env.FRONTEND_ORIGIN]:[])]),requestOrigin=req.headers.origin;
+      if(requestOrigin&&allowedOrigins.has(requestOrigin)){res.setHeader('Access-Control-Allow-Origin',requestOrigin);res.setHeader('Vary','Origin')}
+      if(req.method==='OPTIONS'){if(!requestOrigin||!allowedOrigins.has(requestOrigin))return reply(res,403,{error:'Недоверенный адрес сайта'});res.writeHead(204,{'Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Authorization,Content-Type','Access-Control-Max-Age':'600'});return res.end()}
       const actor = sessions(req);
       if (req.method === "POST") {
         const origin = req.headers.origin;
         const expected =
           process.env.PUBLIC_ORIGIN || `http://${req.headers.host}`;
-        if (origin !== expected && url.pathname!=="/api/payments/webhook")
+        if (!allowedOrigins.has(origin) && url.pathname!=="/api/payments/webhook")
           return reply(res, 403, { error: "Запрос с недоверенного адреса" });
         if (
           !req.headers["content-type"]?.startsWith("application/json") &&
@@ -282,12 +286,13 @@ const server = http.createServer(async (req, res) => {
         )
           return reply(res, 415, { error: "Требуется JSON" });
       }
+      if(url.pathname.startsWith('/api/push/')){const raw=requestToken(req)||'';const value=await push.handle({path:url.pathname,method:req.method,actor,sessionHash:hashToken(raw),body:req.method==='POST'?await body(req,16384):{}});return reply(res,200,value)}
       if(url.pathname.startsWith('/api/payments/')){
         if(localOnly){if(!actor)return reply(res,401,{error:'Войдите в кабинет'});if(url.pathname==='/api/payments/config'&&req.method==='GET')return reply(res,200,{configured:false,enabled:false,test:true,localOnly:true});if(!((url.pathname==='/api/payments/orders'&&req.method==='GET')||(url.pathname==='/api/payments/history'&&req.method==='POST')))return reply(res,503,{error:'В локальном режиме оплаты учитываются вручную. Онлайн-оплата отключена.'})}
 
         const headers=new Headers();for(const [k,v] of Object.entries(req.headers))if(typeof v==='string')headers.set(k,v);
         const request=new Request((process.env.PUBLIC_ORIGIN||`http://${req.headers.host}`)+url.pathname+url.search,{method:req.method,headers,...(req.method==='POST'?{body:JSON.stringify(await body(req,16384))}:{})});
-        const response=await handlePayments(request,{DB:paymentDB,PARENT_LINK_SECRET:linkKey.toString('hex'),PUBLIC_APP_URL:(process.env.PUBLIC_ORIGIN||`http://${req.headers.host}`)+'/'},actor,{readState:async()=>getState(),commit:async(previous,next)=>{db.exec('BEGIN IMMEDIATE');try{if(getState().revision!==previous.revision)throw Object.assign(Error('Данные обновились'),{status:409});backup(previous);db.prepare('UPDATE state SET json=? WHERE id=1').run(JSON.stringify(next));db.exec('COMMIT')}catch(e){if(db.isTransaction)db.exec('ROLLBACK');throw e}}});
+        const response=await handlePayments(request,{DB:paymentDB,PARENT_LINK_SECRET:linkKey.toString('hex'),PUBLIC_APP_URL:process.env.PUBLIC_APP_URL||(process.env.PUBLIC_ORIGIN||`http://${req.headers.host}`)+'/'},actor,{readState:async()=>getState(),commit:async(previous,next)=>{db.exec('BEGIN IMMEDIATE');try{if(getState().revision!==previous.revision)throw Object.assign(Error('Данные обновились'),{status:409});backup(previous);db.prepare('UPDATE state SET json=? WHERE id=1').run(JSON.stringify(next));db.exec('COMMIT')}catch(e){if(db.isTransaction)db.exec('ROLLBACK');throw e}}});
         res.writeHead(response.status,Object.fromEntries(response.headers));return res.end(Buffer.from(await response.arrayBuffer()));
       }
       if (url.pathname === "/api/session" && req.method === "GET")
@@ -334,28 +339,15 @@ const server = http.createServer(async (req, res) => {
             role: u.role,
             family: u.family,
             authMode: "password",
+            authToken: token,
           },
           { "Set-Cookie": cookie(token) },
         );
       }
-      if (url.pathname === "/api/public/lessons" && req.method === "GET") {
-        const s = getState();
-        return reply(res, 200, {
-          lessons: s.lessons
-            .filter(
-              (l) => l.status!=="cancelled"&& new Date(l.date + "T" + l.time + ":00+05:00") > new Date(),
-            )
-            .map((l) => ({
-              id: l.id,
-              date: l.date,
-              time: l.time,
-              duration: l.duration,
-              title: l.title,
-              format: l.format,
-              lessonType: l.lessonType || "group",
-              age: l.age,
-            })),
-        });
+      if(url.pathname==='/api/public/lessons'&&req.method==='GET')return reply(res,200,publicEnrollment(getState()));
+      if(url.pathname==='/api/public/enroll'&&req.method==='POST'){
+        if(limited(req,'intake'))return reply(res,429,{error:'Слишком много заявок. Повторите позже.'});const input=await body(req,16384);db.exec('BEGIN IMMEDIATE');let result;try{const previous=getState(),next=structuredClone(previous);result=enrollApplication(next,input,new Date(),actor);if(next.revision!==previous.revision){backup(previous);db.prepare('UPDATE state SET json=? WHERE id=1').run(JSON.stringify(next))}db.exec('COMMIT')}catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error}
+        const link=newLink(result.family,'Первичная запись',365);return reply(res,201,{...result,parentLink:linkView(link,req)});
       }
       if (
         url.pathname === "/api/public/applications" &&
@@ -416,7 +408,7 @@ const server = http.createServer(async (req, res) => {
         return reply(
           res,
           200,
-          { role: "parent", family: link.family, username, authMode: "link" },
+          { role: "parent", family: link.family, username, authMode: "link",authToken:token },
           {
             "Set-Cookie": cookie(
               token,
@@ -427,11 +419,7 @@ const server = http.createServer(async (req, res) => {
       }
       if (!actor) return reply(res, 401, { error: "Войдите в кабинет" });
       if (url.pathname === "/api/logout" && req.method === "POST") {
-        const t = req.headers.cookie
-          ?.split(";")
-          .map((s) => s.trim())
-          .find((s) => s.startsWith("yasna_session="))
-          ?.slice(14);
+        const t=requestToken(req);
         if (t)
           db.prepare("DELETE FROM sessions WHERE token=?").run(hashToken(t));
         return reply(res, 200, { ok: true }, { "Set-Cookie": cookie("", 0) });
@@ -516,6 +504,7 @@ const server = http.createServer(async (req, res) => {
           throw e;
         }
       }
+      if(url.pathname.startsWith('/api/receipts/')&&req.method==='GET'){const state=getState(),payment=state.payments.find(p=>p.id===decodeURIComponent(url.pathname.slice('/api/receipts/'.length))),child=payment?state.children.find(c=>c.id===payment.child):null;if(!payment?.receipt?.data||!child||actor.role!=='master'&&actor.family!==child.family)return reply(res,404,{error:'Чек не найден'});const match=payment.receipt.data.match(/^data:(application\/pdf|image\/(?:png|jpeg));base64,(.+)$/s);if(!match)return reply(res,404,{error:'Файл чека недоступен'});res.writeHead(200,{'Content-Type':match[1],'Content-Disposition':"attachment; filename=receipt; filename*=UTF-8''"+encodeURIComponent(payment.receipt.name),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'});return res.end(Buffer.from(match[2],'base64'))}
       if (url.pathname === "/api/notifications" && req.method === "GET") {
         const row = db
             .prepare("SELECT json FROM notification_reads WHERE username=?")
@@ -587,7 +576,7 @@ const server = http.createServer(async (req, res) => {
             validateRestore(a.state);
             next = a.state;
             next.revision = previous.revision + 1;
-          } else {if(a.action.type==='child-archive'&&db.prepare("SELECT json FROM yasna_payment_orders WHERE status NOT IN ('succeeded','canceled')").all().some(r=>JSON.parse(r.json).child===a.action.child))throw Error('Сначала завершите или отмените незавершённую оплату ребёнка.');next = applyAction(structuredClone(previous), a.action, actor);}
+          } else {if(['payment','family-payment'].includes(a.action.type)){const ids=new Set(a.action.children||[a.action.child]);if(db.prepare("SELECT json FROM yasna_payment_orders WHERE status NOT IN ('succeeded','canceled')").all().some(r=>JSON.parse(r.json).items?.some(i=>ids.has(i.child))))throw Error('Сначала завершите онлайн-оплату этой семьи.')}if(a.action.type==='child-archive'&&db.prepare("SELECT json FROM yasna_payment_orders WHERE status NOT IN ('succeeded','canceled')").all().some(r=>((o)=>o.child===a.action.child||o.items?.some(i=>i.child===a.action.child))(JSON.parse(r.json))))throw Error('Сначала завершите или отмените незавершённую оплату ребёнка.');next = applyAction(structuredClone(previous), a.action, actor);}
           backup(previous);
           db.prepare("UPDATE state SET json=? WHERE id=1").run(
             JSON.stringify(next),
@@ -612,6 +601,14 @@ const server = http.createServer(async (req, res) => {
       "/index.html": "index.html",
       "/app.js": "app.js",
       "/billing.js":"billing.js",
+      "/purchase.js":"purchase.js",
+      "/catalog.js":"catalog.js",
+      "/enrollment.js":"enrollment.js",
+      "/theme.js":"theme.js",
+      "/push-client.js":"push-client.js",
+      "/sw.js":"sw.js",
+      "/manifest.webmanifest":"manifest.webmanifest",
+      "/theme.css":"theme.css",
       "/payment-widget.js":"payment-widget.js",
       "/yookassa-sdk.js":"yookassa-sdk.js",
       "/yookassa-sdk-source.txt":"yookassa-sdk-source.txt",
@@ -638,6 +635,7 @@ const server = http.createServer(async (req, res) => {
     const file = staticFiles[url.pathname];
     if (!file) return reply(res, 404, { error: "Не найдено" });
     const types = {
+      ".webmanifest":"application/manifest+json",
       ".html": "text/html; charset=utf-8",
       ".js": "text/javascript; charset=utf-8",
       ".css": "text/css; charset=utf-8",
@@ -660,7 +658,7 @@ const server = http.createServer(async (req, res) => {
     );
   } catch (e) {
     console.error(e.message);
-    reply(res, 400, { error: e.message || "Не удалось выполнить действие" });
+    reply(res, e.status||400, { error: e.message || "Не удалось выполнить действие" });
   }
 });
 server.requestTimeout = 30000;

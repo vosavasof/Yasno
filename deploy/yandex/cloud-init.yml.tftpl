@@ -1,0 +1,37 @@
+#cloud-config
+groups: [docker]
+users:
+  - name: ubuntu
+    groups: [sudo, docker]
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ${ssh_public_key}
+package_update: true
+packages: [git, docker.io, docker-compose-v2, openssl]
+write_files:
+  - path: /usr/local/sbin/yasna-install
+    permissions: '0700'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      systemctl enable --now docker
+      git clone https://github.com/vosavasof/Yasno.git /opt/yasna
+      cd /opt/yasna
+      git checkout --detach '${revision}'
+      umask 077
+      printf 'SITE_DOMAIN=%s\nMASTER_LOGIN=master\nFRONTEND_ORIGIN=https://vosavasof.github.io\nPUBLIC_APP_URL=https://vosavasof.github.io/Yasno/\nMASTER_PASSWORD=%s\n' '${domain}' "$(openssl rand -hex 24)" > .env
+      docker compose up -d --build
+  - path: /usr/local/sbin/yasna-backup
+    permissions: '0700'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      cd /opt/yasna
+      docker compose exec -T app node scripts/backup.mjs
+  - path: /etc/cron.d/yasna-backup
+    permissions: '0644'
+    content: |
+      15 1 * * * root /usr/local/sbin/yasna-backup >> /var/log/yasna-backup.log 2>&1
+runcmd:
+  - [/usr/local/sbin/yasna-install]

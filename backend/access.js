@@ -25,3 +25,5 @@ export async function handleAccess(req,env,actor){const path=new URL(req.url).pa
  const m=path.match(/^\/api\/parent-links\/([a-f0-9-]{36})\/(revoke|rotate)$/);if(m&&req.method==='POST'){if(actor?.role!=='master')throw fail('Только для мастера',403);const l=await env.DB.prepare('SELECT * FROM yasna_parent_links WHERE id=?').bind(m[1]).first();if(!l)throw fail('Ссылка не найдена',404);if(l.revoked&&m[2]==='rotate')throw fail('Ссылка уже отозвана. Создайте новую.');await env.DB.batch([env.DB.prepare('UPDATE yasna_parent_links SET revoked=1 WHERE id=?').bind(l.id),env.DB.prepare('DELETE FROM yasna_access_sessions WHERE link_id=?').bind(l.id)]);if(m[2]==='revoke')return j({ok:true});const fresh=await createLink(env,{family:l.family,label:l.label,expiresDays:Math.max(1,Math.round((l.expires-l.created)/864e5))});return j({link:await view(env,fresh)})}
  return null;
 }
+
+export async function enrollmentAccess(env,family,issueSession=true){const link=await createLink(env,{family,label:'Первичная запись'});return{parentLink:await view(env,link),...(issueSession?await makeSession(env,{role:'parent',family,userId:'parentlink:'+link.id,authMode:'link'},link.id):{})}}

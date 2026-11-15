@@ -1,11 +1,11 @@
-name: Выпуск локальной версии macOS
+name: Выпуск приложения и серверного комплекта
 on:
   workflow_dispatch:
     inputs:
       release_tag:
         description: Версия выпуска
         required: true
-        default: v1.1.0-local-macos
+        default: v1.2.0-web
 permissions:
   contents: write
 jobs:
@@ -19,6 +19,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: python3 scripts/package-macos.py
+      - run: python3 scripts/package-server.py
       - name: Verify bundled application
         shell: bash
         run: |
@@ -34,4 +35,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ inputs.release_tag }}
-        run: gh release create "$RELEASE_TAG" work/Yasna-macOS.zip work/Yasna-macOS.zip.sha256 --target "$GITHUB_SHA" --title 'Ясна для macOS — локальная база' --notes-file local/release-notes.md
+        run: gh release create "$RELEASE_TAG" work/Yasna-macOS.zip work/Yasna-macOS.zip.sha256 work/Yasna-server.zip work/Yasna-server.zip.sha256 --target "$GITHUB_SHA" --title 'Ясна — семейная запись и веб-версия' --notes-file local/release-notes.md

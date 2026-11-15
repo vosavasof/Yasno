@@ -1,3 +1,5 @@
+import{familyPurchase,applyPurchase}from'./purchase.js';
+import{LESSON_TYPES}from'./catalog.js';
 import{paymentQuote,moneyMinor}from'./billing.js';
 import{applyImport}from'./import-data.js';
 import{applyManagement,parentsFor}from'./management.js';
@@ -53,7 +55,8 @@ export function applyAction(
       }),
       type: a.type,
     });
-  if (a.type === "book") {
+  if(a.type==='family-payment'){master();const quote=familyPurchase(s,a,actor),order={...quote,method:a.method||'Перевод',provider:'manual'};applyPurchase(s,order,now.toLocaleDateString('sv-SE',{timeZone:'Asia/Yekaterinburg'}),()=>uid());log('Оплата семьи · '+quote.items.length+' детей · скидка '+quote.discountPercent+'%');
+  } else if (a.type === "book") {
     child(a.child);
     const l = s.lessons.find((l) => l.id === a.lesson);
     if (!l || l.status === "cancelled") throw Error("Занятие не найдено или отменено");
@@ -186,7 +189,7 @@ export function applyAction(
   } else if (a.type === "lesson") {
     master();
     const lessonType = a.lessonType || "group";
-    if (!["group", "individual"].includes(lessonType))
+    if (!LESSON_TYPES.includes(lessonType))
       throw Error("Выберите формат занятия");
     const capacity = lessonType === "individual" ? 1 : +a.capacity;
     if (
@@ -201,8 +204,10 @@ export function applyAction(
       +a.duration > 1440
     )
       throw Error("Проверьте поля занятия");
+    const members=a.children||[];if(!Array.isArray(members)||new Set(members).size!==members.length||members.length>capacity||members.some(id=>!s.children.some(c=>c.id===id&&!c.archived)))throw Error('Проверьте участников и вместимость группы');
+    const lessonId=uid();
     s.lessons.push({
-      id: uid(),
+      id: lessonId,
       title: a.title.trim().slice(0, 100),
       date: a.date,
       time: a.time,
@@ -213,6 +218,7 @@ export function applyAction(
       age: a.age || "7–12 лет",
       color: "orange",
     });
+    for(const member of members)s.bookings.push({id:uid(),child:member,lesson:lessonId,status:"booked"});
     log("Добавлено занятие «" + a.title + "»");
   } else if (a.type === "child") {
     master();
@@ -255,6 +261,8 @@ export function applyAction(
     if (+a.credits < 1 || +a.price < 1)
       throw Error("Цена и занятия должны быть больше нуля");
     if(a.lessonPrice!==undefined&&moneyMinor(a.lessonPrice)>10000000)throw Error("Стоимость занятия не должна превышать 100 000 ₽");
+    if(a.privacyDocumentUrl){let url;try{url=new URL(a.privacyDocumentUrl)}catch{throw Error('Укажите HTTPS-ссылку на документ о персональных данных')}if(url.protocol!=='https:'||url.username||url.password)throw Error('Укажите HTTPS-ссылку на документ о персональных данных')}
+    for(const key of ['trialPrice','singlePrice','subscriptionPrice'])if(a[key]!==undefined)moneyMinor(a[key]);
     s.settings = {
       cancelHours: +a.cancelHours,
       remindAt: +a.remindAt,
@@ -262,6 +270,9 @@ export function applyAction(
       ...(a.lessonPrice!==undefined?{lessonPrice:moneyMinor(a.lessonPrice)/100}:s.settings.lessonPrice!==undefined?{lessonPrice:s.settings.lessonPrice}:{}),
       credits: +a.credits,
       chargeMissed: !!a.chargeMissed,
+      privacyDocumentUrl:a.privacyDocumentUrl===undefined?s.settings.privacyDocumentUrl||'':String(a.privacyDocumentUrl).trim(),
+      ...Object.fromEntries(['trialPrice','singlePrice','subscriptionPrice'].filter(k=>a[k]!==undefined||s.settings[k]!==undefined).map(k=>[k,a[k]===undefined?s.settings[k]:moneyMinor(a[k])/100])),
+      subscriptionCredits:Number(a.subscriptionCredits||s.settings.subscriptionCredits||4),
     };
     log("Правила мастерской обновлены");
   } else if (a.type === "application_status") {
@@ -407,6 +418,9 @@ export function validateState(s) {
   )
     fail();
   if(s.settings.lessonPrice!==undefined){try{if(moneyMinor(s.settings.lessonPrice)>10000000)fail()}catch{fail()}}
+  for(const key of ['trialPrice','singlePrice','subscriptionPrice'])if(s.settings[key]!==undefined){try{moneyMinor(s.settings[key])}catch{fail()}}
+  if(s.settings.subscriptionCredits!==undefined&&(!Number.isInteger(s.settings.subscriptionCredits)||s.settings.subscriptionCredits<1||s.settings.subscriptionCredits>100))fail();
+  if(s.settings.privacyDocumentUrl){try{const u=new URL(s.settings.privacyDocumentUrl);if(u.protocol!=='https:'||u.username||u.password||s.settings.privacyDocumentUrl.length>2000)fail()}catch{fail()}}
   const children = new Set(s.children.map((c) => c.id)),
     lessons = new Set(s.lessons.map((l) => l.id));
   if (children.size !== s.children.length || lessons.size !== s.lessons.length)
@@ -446,7 +460,7 @@ export function validateState(s) {
       !Number.isInteger(l.duration) ||
       l.duration < 1 ||
       l.duration > 1440 ||
-      !["group", "individual"].includes(l.lessonType || "group") ||
+      !LESSON_TYPES.includes(l.lessonType || "group") ||
       (l.lessonType === "individual" && l.capacity !== 1) ||
       !["orange", "green", "purple"].includes(l.color)
     )
@@ -478,7 +492,7 @@ export function validateState(s) {
       !id(p.id) ||
       !children.has(p.child) ||
       !Number.isFinite(p.amount) ||
-      p.amount <= 0 ||
+      p.amount < (p.advanceUsedMinor?0:0.01) ||
       !Number.isInteger(p.credits) ||
       p.credits < (p.provider === "import" || p.unitPriceMinor ? 0 : 1) ||
       !str(p.date) ||
@@ -521,7 +535,7 @@ export function validateState(s) {
         r.age < 3 ||
         r.age > 18 ||
         !["phone", "telegram", "whatsapp", "email"].includes(r.contactMethod) ||
-        !["group", "individual"].includes(r.lessonType) ||
+        !LESSON_TYPES.includes(r.lessonType) ||
         !["pending", "contacted", "confirmed", "declined"].includes(r.status) ||
         !str(r.createdAt) ||
         r.consent !== true ||
@@ -572,7 +586,7 @@ export function submitApplication(s, input, now = new Date()) {
     throw Error("Укажите корректную электронную почту");
   if (
     !["phone", "telegram", "whatsapp", "email"].includes(contactMethod) ||
-    !["group", "individual"].includes(lessonType)
+    !LESSON_TYPES.includes(lessonType)
   )
     throw Error("Выберите способ связи и формат занятия");
   if (contactMethod === "telegram" && !messenger)

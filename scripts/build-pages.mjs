@@ -1,6 +1,6 @@
 import{securityPolicy}from'../dist/security-policy.js';
 import{resolvePagesApi}from'./pages-api.mjs';
 import{cpSync,mkdirSync,writeFileSync,readFileSync}from'node:fs';
-const api=new URL(await resolvePagesApi());const basePath=process.env.PAGES_BASE_PATH||'/Yasno/';
-mkdirSync('work/pages',{recursive:true});cpSync('dist','work/pages',{recursive:true});writeFileSync('work/pages/config.js','window.YASNA_API_BASE='+JSON.stringify(api.origin)+';\nwindow.YASNA_APP_PATH='+JSON.stringify(basePath)+';\n');writeFileSync('work/pages/.nojekyll','');
-const html=readFileSync('work/pages/index.html','utf8').replace('</head>',`<meta http-equiv="Content-Security-Policy" content="${securityPolicy({apiOrigin:api.origin})}"/></head>`);writeFileSync('work/pages/index.html',html);console.log('GitHub Pages application built in work/pages');
+const configured=await resolvePagesApi(),api=configured?new URL(configured):null;const basePath=process.env.PAGES_BASE_PATH||'/Yasno/';
+mkdirSync('work/pages',{recursive:true});cpSync('dist','work/pages',{recursive:true});writeFileSync('work/pages/config.js','window.YASNA_API_BASE='+JSON.stringify(api?.origin||'')+';\nwindow.YASNA_APP_PATH='+JSON.stringify(basePath)+';\n');const manifest=JSON.parse(readFileSync('work/pages/manifest.webmanifest','utf8'));manifest.id=basePath;manifest.start_url=basePath;manifest.scope=basePath;writeFileSync('work/pages/manifest.webmanifest',JSON.stringify(manifest));writeFileSync('work/pages/.nojekyll','');writeFileSync('work/pages/config.js',readFileSync('work/pages/config.js','utf8')+'window.YASNA_BACKEND_CONFIGURED='+JSON.stringify(!!api)+';\n');
+const html=readFileSync('work/pages/index.html','utf8').replace('</head>',`<meta http-equiv="Content-Security-Policy" content="${securityPolicy({apiOrigin:api?.origin||''})}"/></head>`);writeFileSync('work/pages/index.html',html);console.log('GitHub Pages application built in work/pages');

@@ -18,9 +18,5 @@ db.exec("PRAGMA busy_timeout=5000");
 db.prepare("VACUUM INTO ?").run(resolve(target, "yasna.sqlite"));
 db.close();
 chmodSync(resolve(target, "yasna.sqlite"), 0o600);
-const key = resolve(data, "parent-links.key");
-if (existsSync(key)) {
-  copyFileSync(key, resolve(target, "parent-links.key"));
-  chmodSync(resolve(target, "parent-links.key"), 0o600);
-}
-console.log("Полная резервная копия базы и ключа ссылок: " + target);
+for(const name of ['parent-links.key','push-vapid.json']){const key=resolve(data,name);if(existsSync(key)){copyFileSync(key,resolve(target,name));chmodSync(resolve(target,name),0o600)}}
+console.log("Полная резервная копия базы и ключей: " + target);

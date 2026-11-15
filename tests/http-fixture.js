@@ -9,6 +9,8 @@ export async function startServer({
   fixture = false,
   dir: provided,
   secure = false,
+  frontendOrigin,
+  publicAppUrl,
 } = {}) {
   const dir = provided || mkdtempSync(join(tmpdir(), "yasna-http-"));
   if (fixture) fixtureDatabase(dir);
@@ -22,6 +24,8 @@ export async function startServer({
     TRUST_PROXY: "false",
   };
   delete env.PUBLIC_ORIGIN;
+  if(frontendOrigin)env.FRONTEND_ORIGIN=frontendOrigin;else delete env.FRONTEND_ORIGIN;
+  if(publicAppUrl)env.PUBLIC_APP_URL=publicAppUrl;else delete env.PUBLIC_APP_URL;
   const proc = spawn(process.execPath, ["server.mjs"], {
     cwd: resolve("."),
     env,

@@ -7,6 +7,8 @@ services:
       MASTER_LOGIN: ${MASTER_LOGIN:-master}
       MASTER_PASSWORD: ${MASTER_PASSWORD:?Set MASTER_PASSWORD in .env}
       PUBLIC_ORIGIN: https://${SITE_DOMAIN:?Set SITE_DOMAIN in .env}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-}
       COOKIE_SECURE: "true"
       TRUST_PROXY: "true"
     volumes:

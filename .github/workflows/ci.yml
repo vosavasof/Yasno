@@ -39,3 +39,10 @@ jobs:
           export YASNA_TEST_NODE="$PWD/work/macos-package/Yasna/runtime/$runtime_arch/bin/node"
           export YASNA_TEST_ROOT="$PWD/work/macos-package/Yasna"
           node --test tests/local.test.mjs
+  yandex-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform -chdir=deploy/yandex init -backend=false
+      - run: terraform -chdir=deploy/yandex validate

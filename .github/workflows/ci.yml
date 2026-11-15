@@ -14,6 +14,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm run audit:assets
       - run: npm test
       - run: node --check server.mjs
       - run: docker build -t yasna:test .

@@ -1,7 +1,6 @@
 // Official YooKassa iframe widget. A browser event never grants credits: the
 // caller verifies the order on the server before displaying a successful result.
-import{CHECKOUT_SCRIPTS}from'./security-policy.js';
-export const WIDGET_SOURCES=[new URL('./yookassa-sdk.js',import.meta.url).href,...CHECKOUT_SCRIPTS];
+export const WIDGET_SOURCES=[new URL('./yookassa-sdk.js',import.meta.url).href];
 let loading;
 function loadScript(src){
  return new Promise((resolve,reject)=>{

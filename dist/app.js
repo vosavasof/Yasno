@@ -1,5 +1,5 @@
 import{paymentQuote,lessonPriceMinor,lessonPurchase}from'./billing.js';
-import{mountCheckout}from'./payment-widget.js?v=lessons1';
+import{mountCheckout}from'./payment-widget.js?v=localjs1';
 import{parentsFor}from'./management.js';
 import{parseCSV,importFields,suggestMapping,mappedRows,planImport}from'./import-data.js';
 import{enhanceTables,closeNavigation,toggleNavigation,setNavigation}from'./mobile-ui.js?v=mobile1';

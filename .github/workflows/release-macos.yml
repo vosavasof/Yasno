@@ -1,0 +1,37 @@
+name: Выпуск локальной версии macOS
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Версия выпуска
+        required: true
+        default: v1.1.0-local-macos
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: python3 scripts/package-macos.py
+      - name: Verify bundled application
+        shell: bash
+        run: |
+          case "$(uname -m)" in
+            arm64) runtime_arch=arm64 ;;
+            x86_64) runtime_arch=x64 ;;
+          esac
+          export YASNA_TEST_NODE="$PWD/work/macos-package/Yasna/runtime/$runtime_arch/bin/node"
+          export YASNA_TEST_ROOT="$PWD/work/macos-package/Yasna"
+          node --test tests/local.test.mjs
+      - name: Publish application and checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: gh release create "$RELEASE_TAG" work/Yasna-macOS.zip work/Yasna-macOS.zip.sha256 --target "$GITHUB_SHA" --title 'Ясна для macOS — локальная база' --notes-file local/release-notes.md

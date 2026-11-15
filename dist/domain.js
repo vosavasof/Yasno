@@ -1,3 +1,4 @@
+import{paymentQuote,moneyMinor}from'./billing.js';
 import{applyImport}from'./import-data.js';
 import{applyManagement,parentsFor}from'./management.js';
 export const TODAY = "2026-11-14";
@@ -140,15 +141,16 @@ export function applyAction(
   } else if (a.type === "payment") {
     master();
     const c = child(a.child);
+    const quote=a.autoCredits===true?paymentQuote(s.settings,a.amount,c.advanceMinor||0):null;
     const amount = Number(a.amount),
-      credits = Number(a.credits);
+      credits = quote?quote.credits:Number(a.credits);
     if (
       !Number.isFinite(amount) ||
       amount <= 0 ||
       amount > 1000000 ||
       !Number.isInteger(credits) ||
-      credits < 1 ||
-      credits > 100
+      credits < (quote?0:1) ||
+      credits > (quote?100000:100)
     )
       throw Error("Проверьте сумму и количество занятий");
     s.payments.unshift({
@@ -158,9 +160,11 @@ export function applyAction(
       credits,
       date: now.toLocaleDateString("sv-SE", { timeZone: "Asia/Yekaterinburg" }),
       method: String(a.method).slice(0, 50),
+      ...(quote?{unitPriceMinor:quote.unitPriceMinor,advanceBeforeMinor:quote.advanceBeforeMinor,advanceAfterMinor:quote.advanceAfterMinor}:{}),
       receipt: null,
     });
     c.balance += credits;
+    if(quote)c.advanceMinor=quote.advanceAfterMinor;
     log("Оплата " + c.name + " · " + amount + " ₽");
   } else if (a.type === "receipt") {
     master();
@@ -243,17 +247,19 @@ export function applyAction(
     master();
     for (const k of ["cancelHours", "remindAt", "price", "credits"])
       if (
-        !Number.isInteger(+a[k]) ||
+        (k==="price"?(()=>{try{moneyMinor(a[k]);return false}catch{return true}})():!Number.isInteger(+a[k])) ||
         +a[k] < 0 ||
         +a[k] > (k === "price" ? 100000 : 168)
       )
         throw Error("Проверьте настройки");
     if (+a.credits < 1 || +a.price < 1)
       throw Error("Цена и занятия должны быть больше нуля");
+    if(a.lessonPrice!==undefined&&moneyMinor(a.lessonPrice)>10000000)throw Error("Стоимость занятия не должна превышать 100 000 ₽");
     s.settings = {
       cancelHours: +a.cancelHours,
       remindAt: +a.remindAt,
       price: +a.price,
+      ...(a.lessonPrice!==undefined?{lessonPrice:moneyMinor(a.lessonPrice)/100}:s.settings.lessonPrice!==undefined?{lessonPrice:s.settings.lessonPrice}:{}),
       credits: +a.credits,
       chargeMissed: !!a.chargeMissed,
     };
@@ -389,7 +395,7 @@ export function validateState(s) {
     fail();
   for (const k of ["cancelHours", "remindAt", "price", "credits"])
     if (
-      !Number.isInteger(s.settings[k]) ||
+      (k==="price"?(()=>{try{moneyMinor(s.settings[k]);return false}catch{return true}})():!Number.isInteger(s.settings[k])) ||
       s.settings[k] < 0 ||
       s.settings[k] > 100000
     )
@@ -400,6 +406,7 @@ export function validateState(s) {
     typeof s.settings.chargeMissed !== "boolean"
   )
     fail();
+  if(s.settings.lessonPrice!==undefined){try{if(moneyMinor(s.settings.lessonPrice)>10000000)fail()}catch{fail()}}
   const children = new Set(s.children.map((c) => c.id)),
     lessons = new Set(s.lessons.map((l) => l.id));
   if (children.size !== s.children.length || lessons.size !== s.lessons.length)
@@ -418,6 +425,7 @@ export function validateState(s) {
       !Number.isInteger(c.age) ||
       c.age < 3 ||
       c.age > 18 ||
+      (c.advanceMinor!==undefined&&(!Number.isSafeInteger(c.advanceMinor)||c.advanceMinor<0||c.advanceMinor>100000000)) ||
       !Number.isInteger(c.balance) ||
       c.balance < 0 ||
       !["peach", "green", "rose", "blue", "yellow", "lilac"].includes(c.color)
@@ -464,13 +472,15 @@ export function validateState(s) {
     )
       fail();
   for (const p of s.payments) {
+    if(p.unitPriceMinor!==undefined&&(!Number.isSafeInteger(p.unitPriceMinor)||p.unitPriceMinor<100||p.unitPriceMinor>100000000))fail();
+    for(const key of ["advanceBeforeMinor","advanceAfterMinor"])if(p[key]!==undefined&&(!Number.isSafeInteger(p[key])||p[key]<0||p[key]>100000000))fail();
     if (
       !id(p.id) ||
       !children.has(p.child) ||
       !Number.isFinite(p.amount) ||
       p.amount <= 0 ||
       !Number.isInteger(p.credits) ||
-      p.credits < (p.provider === "import" ? 0 : 1) ||
+      p.credits < (p.provider === "import" || p.unitPriceMinor ? 0 : 1) ||
       !str(p.date) ||
       !str(p.method)
     )

@@ -607,6 +607,7 @@ const server = http.createServer(async (req, res) => {
       "/": "index.html",
       "/index.html": "index.html",
       "/app.js": "app.js",
+      "/billing.js":"billing.js",
       "/payment-widget.js":"payment-widget.js",
       "/yookassa-sdk.js":"yookassa-sdk.js",
       "/yookassa-sdk-source.txt":"yookassa-sdk-source.txt",

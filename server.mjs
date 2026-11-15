@@ -623,6 +623,8 @@ const server = http.createServer(async (req, res) => {
       "/mobile.css":"mobile.css",
       "/yasna-logo-light.webp":"yasna-logo-light.webp",
       "/yasna-logo-light.png":"yasna-logo-light.png",
+      "/yasna-brand-light.png":"yasna-brand-light.png",
+      "/yasna-brand-dark.png":"yasna-brand-dark.png",
       "/api-client.js":"api-client.js",
       "/config.js":"config.js",
       "/domain.js": "domain.js",

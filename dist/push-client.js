@@ -1,4 +1,4 @@
-import{apiFetch}from'./api-client.js';
+import{apiFetch}from'./api-client.js?v=pwaaccess1';
 async function request(path,body){const r=await apiFetch('/api/push/'+path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),v=await r.json();if(!r.ok)throw Error(v.error||'Не удалось выполнить запрос push');return v}
 export async function enablePush(){
  if(!('serviceWorker'in navigator)||!('PushManager'in window)||!('Notification'in window))throw Error('На iPhone откройте HTTPS-сайт в Safari → Поделиться → На экран «Домой», затем запустите его с экрана «Домой» (iOS 16.4 или новее).');

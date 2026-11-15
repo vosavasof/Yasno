@@ -1,5 +1,5 @@
 import{enrollApplication}from'./enrollment.js?v=instantbooking1';
-import{enablePush,testPush,pushStatus}from'./push-client.js';
+import{enablePush,testPush,pushStatus}from'./push-client.js?v=pwaaccess1';
 import{familyPurchase,planSettings}from'./purchase.js';
 import{LESSON_FORMATS}from'./catalog.js';
 import{initTheme,toggleTheme,currentTheme,themeSwitch}from'./theme.js?v=brandthemes1';
@@ -9,7 +9,7 @@ import{mountCheckout}from'./payment-widget.js?v=localjs1';
 import{parentsFor}from'./management.js';
 import{parseCSV,importFields,suggestMapping,mappedRows,planImport}from'./import-data.js';
 import{enhanceTables,closeNavigation,toggleNavigation,setNavigation}from'./mobile-ui.js?v=mobile1';
-import {apiFetch,clearAccess} from './api-client.js?v=pages1';
+import {apiFetch,clearAccess,preferredAccessRole} from './api-client.js?v=pwaaccess1';
 import {
   emptyState,
   applyAction,
@@ -87,6 +87,7 @@ let data,
   startupError = null,
   localPersistent = true,
   parentEntryError = null,
+  masterLoginRequested = false,
   alerts = [],
   paymentConfig = {enabled:false,test:true},
   onlineOrders = [],
@@ -271,7 +272,7 @@ function render() {
   if (parentEntryError) return renderParentLinkError();
   if (enrollmentMode) return renderEnrollment();
   viewData = visible();
-  if (backend && !user.role) return login();
+  if (backend && !user.role) return !masterLoginRequested&&(preferredAccessRole()==='parent'||globalThis.navigator?.standalone||window.matchMedia?.('(display-mode: standalone)').matches)?renderParentAccess():login();
   if (
     role === "parent" &&
     !(selectedChild === "all" && viewData.children.length > 1) &&
@@ -1115,10 +1116,17 @@ const actions = {
     render();
   },
 };
+function renderParentAccess(){
+ document.querySelector('#app').innerHTML=`<div class="login-page"><form id="parent-access-form" class="login-card">${brand}${themeSwitch({id:'parent-access-theme'})}<h2>Кабинет родителя</h2><p class="subtitle">Вставьте персональную ссылку, которую выдал мастер. На этом устройстве вход сохранится.</p><label class="form-field">Ссылка на кабинет семьи<input name="parentLink" type="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Вставьте ссылку от мастера" required></label><p class="error" id="parent-access-error" role="alert"></p><button class="btn primary" type="submit">Открыть мой кабинет ${I('arrow')}</button><p class="mini-note">При первом запуске с экрана «Домой» iPhone может попросить ссылку ещё раз. Новый кабинет создавать не нужно.</p><button class="text-link" type="button" id="parent-access-master">Вход для мастера</button></form></div>`;
+ document.querySelector('#parent-access-theme').onclick=toggleTheme;
+ document.querySelector('#parent-access-master').onclick=()=>{masterLoginRequested=true;login()};
+ document.querySelector('#parent-access-form').onsubmit=async e=>{e.preventDefault();const button=e.target.querySelector('[type=submit]'),output=document.querySelector('#parent-access-error');output.textContent='';button.disabled=true;try{const link=new URL(e.target.querySelector('[name=parentLink]').value.trim());if(!['https:','http:'].includes(link.protocol)||!/^#parent=[a-zA-Z0-9_-]{43}$/.test(link.hash))throw Error('Вставьте полную персональную ссылку от мастера. Обычная ссылка на сайт не подойдёт.');const r=await apiFetch('/api/parent-entry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:link.hash.slice(8)})}),session=await readJson(r);if(!r.ok)throw Error(session.error||'Не удалось открыть кабинет');user=session;role=session.role;parentEntryError=null;masterLoginRequested=false;await loadServer();render()}catch(error){output.textContent=error.message;button.disabled=false}};
+}
 function login() {
   document.querySelector("#app").innerHTML =
-    `<div class="login-page"><form id="login-form" class="login-card">${brand}${themeSwitch({id:'login-theme'})}<h2>Вход для мастера</h2><label class="form-field">Логин<input name="username" autocomplete="username" required></label><label class="form-field">Пароль<input name="password" type="password" autocomplete="current-password" required></label><p class="error" id="login-error"></p><button class="btn primary" type="submit">Войти ${I("arrow")}</button><p class="mini-note">Родителям не нужны логин и пароль: мастер выдаёт персональную ссылку на кабинет семьи.</p><button type="button" class="btn" id="login-intake">Впервые у нас? Записать ребёнка</button></form></div>`;
+    `<div class="login-page"><form id="login-form" class="login-card">${brand}${themeSwitch({id:'login-theme'})}<h2>Вход для мастера</h2><label class="form-field">Логин<input name="username" autocomplete="username" required></label><label class="form-field">Пароль<input name="password" type="password" autocomplete="current-password" required></label><p class="error" id="login-error"></p><button class="btn primary" type="submit">Войти ${I("arrow")}</button><p class="mini-note">Родителям не нужны логин и пароль: мастер выдаёт персональную ссылку на кабинет семьи.</p><button type="button" class="text-link" id="login-parent">Я родитель · вход по ссылке</button><button type="button" class="btn" id="login-intake">Впервые у нас? Записать ребёнка</button></form></div>`;
   document.querySelector("#login-theme").onclick=toggleTheme;
+  document.querySelector("#login-parent").onclick=()=>{masterLoginRequested=false;renderParentAccess()};
   document.querySelector("#login-intake").onclick = () =>
     navigateEnrollment(true);
   document.querySelector("#login-form").onsubmit = async (e) => {
@@ -1264,7 +1272,8 @@ function confirmParentLinkAction(family, id, action) {
 }
 function renderParentLinkError() {
   document.querySelector("#app").innerHTML =
-    `<div class="login-page"><section class="login-card">${brand}<h2>Не удалось открыть кабинет</h2><p class="error">${escape(parentEntryError)}</p><p class="subtitle">Свяжитесь с мастером мастерской «Ясна», чтобы получить действующую персональную ссылку.</p></section></div>`;
+    `<div class="login-page"><section class="login-card">${brand}<h2>Не удалось открыть кабинет</h2><p class="error">${escape(parentEntryError)}</p><p class="subtitle">Свяжитесь с мастером мастерской «Ясна», чтобы получить действующую персональную ссылку.</p><button class="btn primary" id="parent-another-link">Открыть другую ссылку</button></section></div>`;
+  document.querySelector("#parent-another-link").onclick=()=>{parentEntryError=null;renderParentAccess()};
 }
 
 function renderPublicHome(){const prices=planSettings({});document.querySelector('#app').innerHTML=`<main class="web-home"><header class="section-head">${brand}${themeSwitch({id:'public-theme'})}</header><section class="panel"><div class="eyebrow">СТОЛЯРНАЯ МАСТЕРСКАЯ · СУРГУТ</div><h1>Мастерим своими руками.<br>Растём с каждым открытием.</h1><p class="subtitle">Занятия для детей, семей и компаний в мастерской «Ясна».</p><div class="modal-actions"><a class="btn primary" href="https://vk.ru/yasna.vibe" target="_blank" rel="noopener noreferrer">Связаться и записаться</a><a class="btn" href="#web-formats">Форматы занятий</a></div></section><section id="web-formats"><h2>Выберите свой формат</h2><div class="public-formats">${Object.values(LESSON_FORMATS).map(label=>`<article class="panel"><h3>${label}</h3></article>`).join('')}</div></section><section><h2>Занятия и абонементы</h2><div class="public-formats">${[['Первый пробный урок',prices.trialPrice,'1 занятие'],['Разовое занятие',prices.singlePrice,'1 занятие'],['Абонемент',prices.subscriptionPrice,prices.subscriptionCredits+' занятия']].map(([title,price,detail])=>`<article class="panel"><h3>${title}</h3><div class="stat-val">${money(price)}</div><p class="mini-note">${detail}</p></article>`).join('')}</div><p class="inline-notice">При одной оплате для двух и более детей одной семьи — скидка 10%.</p></section><section class="panel"><h2>Запись и личный кабинет</h2><p>Общий сервер подключается. Пока записаться и уточнить расписание можно в группе мастерской.</p><p class="mini-note">Для мастера: веб-интерфейс опубликован. Чтобы включить кабинеты, общую базу, оплату и push, подключите новый HTTPS-сервер в Яндекс Cloud.</p><a class="text-link" href="https://github.com/vosavasof/Yasno/tree/main/deploy/yandex" target="_blank" rel="noopener noreferrer">Инструкция подключения сервера</a></section><footer class="footer">© 2026 Ясна · Сургут · <a href="https://vk.ru/yasna.vibe">ВКонтакте</a></footer></main>`;document.querySelector('#public-theme').onclick=toggleTheme}

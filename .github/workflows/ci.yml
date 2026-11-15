@@ -18,3 +18,24 @@ jobs:
       - run: npm test
       - run: node --check server.mjs
       - run: docker build -t yasna:test .
+
+  mac-local:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: python3 scripts/package-macos.py
+      - name: Test packaged application with bundled native runtime
+        shell: bash
+        run: |
+          case "$(uname -m)" in
+            arm64) runtime_arch=arm64 ;;
+            x86_64) runtime_arch=x64 ;;
+          esac
+          export YASNA_TEST_NODE="$PWD/work/macos-package/Yasna/runtime/$runtime_arch/bin/node"
+          export YASNA_TEST_ROOT="$PWD/work/macos-package/Yasna"
+          node --test tests/local.test.mjs

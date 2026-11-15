@@ -25,11 +25,8 @@ jobs:
       - run: npm ci
       - run: npm run audit:assets
       - run: npm test
-      - name: Build Pages with configured API
-        env:
-          YASNA_API_BASE: ${{ vars.YASNA_API_BASE }}
-          PAGES_BASE_PATH: ${{ vars.PAGES_BASE_PATH }}
-        run: node scripts/build-pages.mjs
+      - name: Build local application download page
+        run: node scripts/build-local-page.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

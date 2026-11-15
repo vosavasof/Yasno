@@ -263,7 +263,9 @@ function backup(state) {
   for (const f of files.slice(0, -30)) unlinkSync(resolve(backupDir, f));
 }
 const validateRestore = validateState;
+const localOnly=process.env.YASNA_LOCAL_ONLY==='1';
 const server = http.createServer(async (req, res) => {
+  if(localOnly&&!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host||''))return reply(res,403,{error:'Локальное приложение доступно только на этом компьютере'});
   try {
     const url = new URL(req.url, "http://localhost");
     if (url.pathname.startsWith("/api/")) {
@@ -281,6 +283,8 @@ const server = http.createServer(async (req, res) => {
           return reply(res, 415, { error: "Требуется JSON" });
       }
       if(url.pathname.startsWith('/api/payments/')){
+        if(localOnly){if(!actor)return reply(res,401,{error:'Войдите в кабинет'});if(url.pathname==='/api/payments/config'&&req.method==='GET')return reply(res,200,{configured:false,enabled:false,test:true,localOnly:true});if(!((url.pathname==='/api/payments/orders'&&req.method==='GET')||(url.pathname==='/api/payments/history'&&req.method==='POST')))return reply(res,503,{error:'В локальном режиме оплаты учитываются вручную. Онлайн-оплата отключена.'})}
+
         const headers=new Headers();for(const [k,v] of Object.entries(req.headers))if(typeof v==='string')headers.set(k,v);
         const request=new Request((process.env.PUBLIC_ORIGIN||`http://${req.headers.host}`)+url.pathname+url.search,{method:req.method,headers,...(req.method==='POST'?{body:JSON.stringify(await body(req,16384))}:{})});
         const response=await handlePayments(request,{DB:paymentDB,PARENT_LINK_SECRET:linkKey.toString('hex'),PUBLIC_APP_URL:(process.env.PUBLIC_ORIGIN||`http://${req.headers.host}`)+'/'},actor,{readState:async()=>getState(),commit:async(previous,next)=>{db.exec('BEGIN IMMEDIATE');try{if(getState().revision!==previous.revision)throw Object.assign(Error('Данные обновились'),{status:409});backup(previous);db.prepare('UPDATE state SET json=? WHERE id=1').run(JSON.stringify(next));db.exec('COMMIT')}catch(e){if(db.isTransaction)db.exec('ROLLBACK');throw e}}});
@@ -647,7 +651,7 @@ const server = http.createServer(async (req, res) => {
       "Cache-Control": "no-cache",
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer",
-      "Content-Security-Policy": securityPolicy({preventEmbedding:true}),
+      "Content-Security-Policy": securityPolicy({preventEmbedding:true,localOnly}),
     });
     res.end(
       req.method === "HEAD"
